@@ -20,11 +20,18 @@
 
 ### 1. Abstract
 
+Guitar Hero Guitar Refashioned into a Synth, 4 buttons that correspond to notes. Pressing 2 notes at once will play a different note
+
 ### 2. Motivation
+
 
 ### 3. System Block Diagram
 
+![1773616611345](image/README/1773616611345.png)
+
 ### 4. Design Sketches
+
+![1773616558603](image/README/1773616558603.png)
 
 ### 5. Software Requirements Specification (SRS)
 
