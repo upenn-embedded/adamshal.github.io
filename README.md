@@ -38,33 +38,57 @@ Our motivation for choosing this project is that it combines hardware reuse with
 
 **5.1 Definitions, Abbreviations**
 
-Here, you will define any special terms, acronyms, or abbreviations you plan to use for hardware
+ **MCU** : ATmega328PB microcontroller
+
+ **DAC** : Digital-to-Analog Converter
+
+ **VCO** : Voltage-Controlled Oscillator
+
+ **VCF** : Voltage-Controlled Filter
+
+ **VCA** : Voltage-Controlled Amplifier
+
+ **CV** : Control Voltage
+
+ **UI** : User Interface
 
 **5.2 Functionality**
 
-| ID     | Description                                                                                                                                                                                                              |
-| ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| SRS-01 | The IMU 3-axis acceleration will be measured with 16-bit depth every 100 milliseconds +/-10 milliseconds                                                                                                                 |
-| SRS-02 | The distance sensor shall operate and report values at least every .5 seconds.                                                                                                                                           |
-| SRS-03 | Upon non-nominal distance detected (i.e., the trap mechanism has changed at least 10 cm from the nominal range), the system shall be able to detect the change and alert the user in a timely manner (within 5 seconds). |
-| SRS-04 | Upon a request from the user, the system shall get an image from the internal camera and upload the image to the user system within 10s.                                                                                 |
+| ID     | Description                                                                                                                                                                                                                                 |
+| ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| SRS-01 | The system shall read the guitar pitch buttons and determine the selected note or chord when a button is pressed.                                                                                                                           |
+| SRS-02 | When the user actuates the strum bar, the MCU shall generate and output the correspondingpitch control signal and gate signal.                                                                                                              |
+| SRS-03 | The system shall read the whammy input through the ADC and update pitch bend during active note playback.                                                                                                                                   |
+| SRS-04 | The system shall support a mute function that disables note output when the mute button being pressed.                                                                                                                                     |
+| SRS-05 | The firmware shall continuously monitor all required inputs during operation, including pitch buttons, strum bar, mute button, joystick, and whammy control, without causing the system to miss valid note-trigger events during normal use |
+| SRS-06 | The display and joystick-based UI shall allow the user to change at least one synth setting (such as waveform, octave, or mode), and the selected setting shall be updated on the display.                                                 |
 
 ### 6. Hardware Requirements Specification (HRS)
 
 **6.1 Definitions, Abbreviations**
 
-Here, you will define any special terms, acronyms, or abbreviations you plan to use for hardware
+ **SPI** : Serial Peripheral Interface
+
+ **I2C** : Inter-Integrated Circuit
+
+ **ADC** : Analog-to-Digital Converter
+
+ **PWM** : Pulse-Width Modulation
 
 **6.2 Functionality**
 
-| ID     | Description                                                                                                                        |
-| ------ | ---------------------------------------------------------------------------------------------------------------------------------- |
-| HRS-01 | A distance sensor shall be used for obstacle detection. The sensor shall detect obstacles at a maximum distance of at least 10 cm. |
-| HRS-02 | A noisemaker shall be inside the trap with a strength of at least 55 dB.                                                           |
-| HRS-03 | An electronic motor shall be used to reset the trap remotely and have a torque of 40 Nm in order to reset the trap mechanism.      |
-| HRS-04 | A camera sensor shall be used to capture images of the trap interior. The resolution shall be at least 480p.                       |
+| ID     | Description                                                                                                                                                                                                    |
+| ------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| HRS-01 | The system shall use an ATmega328PB-based control system to interface with all required user inputs, including the pitch buttons, strum input, mute button, joystick, and whammy control                      |
+| HRS-02 | The system shall include a DAC-based pitch CV generation stage capable of producing a stable control signal for the synthesizer voice                                                                         |
+| HRS-03 | The synthesizer hardware shall include, at minimum, a VCO, VCF, and VCA signal chain capable of producing an audible musical output in response to MCU-generated control signals                              |
+| HRS-04 | The system shall include an audio output stage consisting of a buffer and power amplifier capable of driving a speaker or external audio output                                                               |
+| HRS-05 | The system shall include a display module for showing menu or mode information and shall communicate with the MCU using a supported serial protocol such as  I2C .                                             |
+| HRS-06 | The system shall provide regulated power rails as required by the design, including support forlogic-level supply and  analog/audio supply\, so that all components operate within their rated voltage ranges. |
 
 ### 7. Bill of Materials (BOM)
+
+https://docs.google.com/spreadsheets/d/1yVx339OijMxmClf8FyQ_4eZAxMqQx_l-zpqn3cilw3A/edit?usp=sharing
 
 ### 8. Final Demo Goals
 
