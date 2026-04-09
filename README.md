@@ -109,15 +109,15 @@ We will first demonstrate the functionality of the joystick selector and display
 
 ### Last week's progress
 
-# We took apart the original guitar and tested each interface button, stick and switch with a multimeter to make sure current flowed through them and they were functional. We decided to pivot from an analopg synthesizer to a digital synthesizer that operates off of code, and created the first draft of this code for our intial test. We also noticed that the main board which we'd be replacing in the guitar did not fit properly with the internals, so we created a CAD model of the board to laser cut a new one with more leeway in the measurements for the openings to make it slot in seamlessly. 
+We took apart the original guitar and tested each interface button, stick and switch with a multimeter to make sure current flowed through them and they were functional. We decided to pivot from an analopg synthesizer to a digital synthesizer that operates off of code, and created the first draft of this code for our intial test. We also noticed that the main board which we'd be replacing in the guitar did not fit properly with the internals, so we created a CAD model of the board to laser cut a new one with more leeway in the measurements for the openings to make it slot in seamlessly. 
 
 ### Current state of project
 
-# We're still waiting on the remainder of our parts to come in so we can assmeble the system, flash the code and run our intial tests, but for now we've decided to pivot our strategy from connecting only through jumper wires to instead running connections through copper tape on our new iteration of the internal board, as per our team manager's suggestion. 
+We're still waiting on the remainder of our parts to come in so we can assmeble the system, flash the code and run our intial tests, but for now we've decided to pivot our strategy from connecting only through jumper wires to instead running connections through copper tape on our new iteration of the internal board, as per our team manager's suggestion. 
 
 ### Next week's plan
 
-# Build the first full working version of the guitar, test the existing code and mke changes as needed, then begin adding LCD screen functionality. 
+Build the first full working version of the guitar, test the existing code and mke changes as needed, then begin adding LCD screen functionality. 
 
 ## Sprint Review #2
 
