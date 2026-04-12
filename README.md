@@ -123,9 +123,13 @@ Build the first full working version of the guitar, test the existing code and m
 
 ### Last week's progress
 
+We built a breadboarded prototype of the system with the parts available in detkin since our ADC and a few other Adafruit parts still hadn't come in. We had to make a few code changes to account for the difference in functionality due to the lack of an ADC but eventually got decent sound output as desired, then wired up the LCD display though it still isn't functional and doesn't correspond to notes/inputs like we want it to. 
+
 ### Current state of project
+We have a working prototype and are considering using the same no-ADC method in our MVP to reduce complexity and get a full built working version as soon as possible. 
 
 ### Next week's plan
+Print the main master board and solder the system using the wiring format we've used in our prototype and fit it to the actual guitar, fix the LCD screen to at least show some response to inputs even if it isn't fully functional yet.
 
 ## MVP Demo
 
