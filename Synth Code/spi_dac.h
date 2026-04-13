@@ -1,15 +1,19 @@
 /*
- * spi_dac.h — AD5686RARUZ SPI DAC driver interface
+ * spi_dac.h — 8-bit PWM audio output driver interface
  * ESE3500 Final Project — Guitar Synthesizer Controller
  * Team 3: Synth Specialist (Guitar Hero Edition)
  * Authors: Adam Shalabi, Brandon Parkansky, Panos Dimtsoudis
  *
- * Hardware: Analog Devices AD5686RARUZ (16-bit quad SPI DAC, internal 2.5V ref)
- *   VOUT_A → Adafruit 5647 Mono Class-D Amp input → Adafruit 4445 3W 4Ω speaker
- *   VOUT_A → SparkFun PRT-08032 3.5mm headphone jack
- *   Power: 8×AA (12V) → LTC1174CS8-5 (5V) → DAC AVDD/DVDD
- * SPI pins (ATmega2560): SCK=PB5, MOSI=PB3, CS=PB2 (active-low)
- * SPI mode: CPOL=0, CPHA=1 (Mode 1), 8 MHz
+ * Audio output method: Timer2 Fast PWM on OC2A (PB3)
+ *   PWM frequency = F_CPU / 256 = 16 MHz / 256 = 62.5 kHz
+ *   Sample rate driven by Timer1 ISR @ 31250 Hz (2 PWM cycles per sample)
+ *   Output pin PB3 (OC2A) → RC low-pass filter → Adafruit 5647 class-D amp
+ *                                               → Adafruit 4445 3W 4Ω speaker
+ *
+ * PWM protocol:
+ *   OCR2A sets the duty cycle (0 = 0 V, 255 = VCC, 128 = midscale/silence).
+ *   A single OCR2A register write is the entire "transfer" — no bus protocol.
+ *   The RC filter on the output smooths the 62.5 kHz PWM into an analog voltage.
  */
 
 #ifndef SPI_DAC_H
@@ -17,10 +21,10 @@
 
 #include <stdint.h>
 
-/* Configures SPI master mode and the DAC chip-select pin. */
-void spi_dac_init(void);
+/* Configures Timer2 Fast PWM on OC2A (PB3) at 62.5 kHz. */
+void pwm_audio_init(void);
 
-/* Sends a 16-bit sample to DAC channel A over SPI. */
-void spi_dac_write(uint16_t sample);
+/* Writes the top 8 bits of a 16-bit sample to OCR2A as the PWM duty cycle. */
+void pwm_audio_write(uint16_t sample);
 
 #endif /* SPI_DAC_H */

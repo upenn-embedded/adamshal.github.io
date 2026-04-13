@@ -205,7 +205,7 @@ int main(void)
     for (volatile uint16_t i = 0U; i < 1000U; i++);
     uint8_t boot_test = !(PINB & (1 << PB0));
 
-    spi_dac_init();
+    pwm_audio_init();
     synth_init();
     inputs_init();
     display_init();

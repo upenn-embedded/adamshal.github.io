@@ -1,27 +1,106 @@
 /*
- * display.c ? SSD1306 128x64 OLED driver over TWI
- * ESE3500 Final Project ? Guitar Synthesizer Controller
+ * display.c — Adafruit 1.8" ST7735R 128×160 color TFT driver (software SPI)
+ * ESE3500 Final Project — Guitar Synthesizer Controller
  * Team 3: Synth Specialist (Guitar Hero Edition)
  * Authors: Adam Shalabi, Brandon Parkansky, Panos Dimtsoudis
+ *
+ * ── SPI protocol ────────────────────────────────────────────────────────────
+ * Software bit-bang SPI, CPOL=0 CPHA=0 (Mode 0), MSB first.
+ * Each transaction: assert CS low → send bytes → deassert CS high.
+ * DC low  = command byte.
+ * DC high = data byte(s).
+ * 16-bit colour pixels are sent as two bytes, high byte first (RGB565 big-endian).
+ * The display is write-only; no MISO line is used.
+ *
+ * Hardware SPI0 cannot be used because PB3 is claimed by Timer2 OC2A (PWM audio).
+ *
+ * ── Pin wiring (ATmega328PB → Adafruit #358 breakout) ───────────────────────
+ *   PB4 → SDA  (MOSI)
+ *   PB5 → SCK  (SCLK)
+ *   PB2 → TCS  (CS,  active-low)
+ *   PC3 → A0   (DC,  low=command high=data)
+ *   PC4 → RST  (RST, active-low)
+ *
+ * ── Screen layout  128 × 160 px, portrait ───────────────────────────────────
+ *   y   0..  7  top margin
+ *   y   8.. 71  note name — 4× scaled font, centred (64 px tall)
+ *   y  72.. 79  gap
+ *   y  80.. 99  whammy bar — 16 green/grey segments (20 px tall)
+ *   y 100..107  gap
+ *   y 108..119  status line — MUTED (red) or STRUM (yellow), 1× font
+ *   y 120..159  bottom margin
  */
 
 #include <avr/io.h>
 #include <avr/pgmspace.h>
 #include <stdbool.h>
-#include <string.h>
 #include "display.h"
 #include "notes.h"
 
-#define SSD1306_ADDR_W    0x78U
-#define SSD1306_CTRL_CMD  0x00U
-#define SSD1306_CTRL_DAT  0x40U
-#define SSD1306_PAGES     8U
-#define SSD1306_COLS      128U
-#define TWI_TWBR_400K     12U
+/* ── Pin aliases ─────────────────────────────────────────────────────────── */
+#define TFT_MOSI   PB4
+#define TFT_SCK    PB5
+#define TFT_CS     PB2
+#define TFT_DC     PC3
+#define TFT_RST    PC4
 
+/* ── RGB565 colour constants ─────────────────────────────────────────────── */
+#define COL_BLACK   0x0000U
+#define COL_WHITE   0xFFFFU
+#define COL_GREEN   0x07E0U   /* whammy bar fill           */
+#define COL_YELLOW  0xFFE0U   /* STRUM status indicator    */
+#define COL_RED     0xF800U   /* MUTED status indicator    */
+#define COL_GREY    0x2104U   /* whammy bar empty segments */
+
+/* ── ST7735R register addresses ─────────────────────────────────────────── */
+#define ST_SWRESET  0x01U
+#define ST_SLPOUT   0x11U
+#define ST_NORON    0x13U
+#define ST_INVOFF   0x20U
+#define ST_DISPON   0x29U
+#define ST_CASET    0x2AU
+#define ST_RASET    0x2BU
+#define ST_RAMWR    0x2CU
+#define ST_MADCTL   0x36U
+#define ST_COLMOD   0x3AU
+#define ST_FRMCTR1  0xB1U
+#define ST_FRMCTR2  0xB2U
+#define ST_FRMCTR3  0xB3U
+#define ST_INVCTR   0xB4U
+#define ST_PWCTR1   0xC0U
+#define ST_PWCTR2   0xC1U
+#define ST_PWCTR3   0xC2U
+#define ST_PWCTR4   0xC3U
+#define ST_PWCTR5   0xC4U
+#define ST_VMCTR1   0xC5U
+#define ST_GMCTRP1  0xE0U
+#define ST_GMCTRN1  0xE1U
+
+/* ── Screen geometry ─────────────────────────────────────────────────────── */
+#define SCREEN_W    128U
+#define SCREEN_H    160U
+
+/* Column/row offsets — adjust if the image is shifted on your specific panel. */
+#define COL_OFFSET  0U
+#define ROW_OFFSET  0U
+
+/* ── Layout constants ────────────────────────────────────────────────────── */
+#define NOTE_Y      8U    /* top of large note-name area                    */
+#define NOTE_H      64U   /* height of note-name area (8 rows × 4× scale)   */
+#define NOTE_SCALE  4U    /* font scale for note name                        */
+#define WHAMMY_Y    80U   /* top of whammy bar                               */
+#define WHAMMY_H    20U   /* height of whammy bar                            */
+#define STATUS_Y    108U  /* top of status text line                         */
+#define STATUS_H    12U   /* height of status text area                      */
+
+/* ── Module state ────────────────────────────────────────────────────────── */
 volatile uint8_t g_display_dirty = 0U;
 
-/* 5x8 ASCII font covering 0x20?0x7E, one column per byte, stored in flash. */
+static uint8_t g_cursor_x = 0U;
+static uint8_t g_cursor_y = 0U;
+
+/* ── 5×8 ASCII font, 0x20–0x7E, stored in flash ────────────────────────── */
+/* Each entry is 5 column bytes; bit 0 = top row, bit 7 = bottom row.       */
 static const uint8_t font5x8[95][5] PROGMEM = {
     {0x00,0x00,0x00,0x00,0x00}, /* 0x20  ' ' */
     {0x00,0x00,0x5F,0x00,0x00}, /* 0x21  '!' */
@@ -120,263 +199,341 @@ static const uint8_t font5x8[95][5] PROGMEM = {
     {0x08,0x08,0x2A,0x1C,0x08}, /* 0x7E  '~' */
 };
 
-/* Blocks until the TWI hardware signals completion. */
-static void twi_wait(void)
+/* ── Software SPI primitives ─────────────────────────────────────────────── */
+
+static inline void cs_low(void)  { PORTB &= ~(1U << TFT_CS);  }
+static inline void cs_high(void) { PORTB |=  (1U << TFT_CS);  }
+static inline void dc_low(void)  { PORTC &= ~(1U << TFT_DC);  }
+static inline void dc_high(void) { PORTC |=  (1U << TFT_DC);  }
+
+/* Clocks out one byte MSB-first (CPOL=0 CPHA=0). ~10 cycles/bit at 16 MHz. */
+static void spi_byte(uint8_t b)
 {
-    while (!(TWCR0 & (1 << TWINT)));
+    uint8_t i = 8U;
+    do {
+        if (b & 0x80U) PORTB |=  (1U << TFT_MOSI);
+        else            PORTB &= ~(1U << TFT_MOSI);
+        PORTB |=  (1U << TFT_SCK);   /* clock high — data sampled */
+        PORTB &= ~(1U << TFT_SCK);   /* clock low  */
+        b <<= 1U;
+    } while (--i);
 }
 
-/* Sends a TWI START condition. */
-static void twi_start(void)
+/* Sends one command byte (DC low). */
+static void tft_cmd(uint8_t c)
 {
-    TWCR0 = (1 << TWINT) | (1 << TWSTA) | (1 << TWEN);
-    twi_wait();
+    dc_low();
+    cs_low();
+    spi_byte(c);
+    cs_high();
 }
 
-/* Sends a TWI STOP condition. */
-static void twi_stop(void)
+/* Sends one data byte (DC high). */
+static void tft_data(uint8_t d)
 {
-    TWCR0 = (1 << TWINT) | (1 << TWSTO) | (1 << TWEN);
-    while (TWCR0 & (1 << TWSTO));
+    dc_high();
+    cs_low();
+    spi_byte(d);
+    cs_high();
 }
 
-/* Loads one byte into TWDR and clocks it out. */
-static void twi_write(uint8_t b)
+/* ── Address window ──────────────────────────────────────────────────────── */
+
+/* Sets the pixel write window and opens a RAMWR data stream.
+ * Subsequent data bytes are received as RGB565 pixel pairs until CS goes high. */
+static void tft_set_addr(uint8_t x0, uint8_t y0, uint8_t x1, uint8_t y1)
 {
-    TWDR0 = b;
-    TWCR0 = (1 << TWINT) | (1 << TWEN);
-    twi_wait();
+    tft_cmd(ST_CASET);
+    tft_data(0U); tft_data((uint8_t)(x0 + COL_OFFSET));
+    tft_data(0U); tft_data((uint8_t)(x1 + COL_OFFSET));
+
+    tft_cmd(ST_RASET);
+    tft_data(0U); tft_data((uint8_t)(y0 + ROW_OFFSET));
+    tft_data(0U); tft_data((uint8_t)(y1 + ROW_OFFSET));
+
+    tft_cmd(ST_RAMWR);
 }
 
-/* Sends a single command byte to the OLED. */
-static void oled_cmd(uint8_t cmd)
+/* ── Pixel helpers ───────────────────────────────────────────────────────── */
+
+/* Streams `count` pixels of `color` into an already-open RAMWR window.
+ * DC must be high and CS must be low before the call; CS left low on return. */
+static void stream_pixels(uint16_t color, uint16_t count)
 {
-    twi_start();
-    twi_write(SSD1306_ADDR_W);
-    twi_write(SSD1306_CTRL_CMD);
-    twi_write(cmd);
-    twi_stop();
+    uint8_t hi = (uint8_t)(color >> 8);
+    uint8_t lo = (uint8_t)(color & 0xFFU);
+    while (count--) { spi_byte(hi); spi_byte(lo); }
 }
 
-/* Sends two command bytes to the OLED in one transaction. */
-static void oled_cmd2(uint8_t c1, uint8_t c2)
+/* Fills a rectangle with a solid colour. */
+static void tft_fill_rect(uint8_t x, uint8_t y, uint8_t w, uint8_t h,
+                          uint16_t color)
 {
-    twi_start();
-    twi_write(SSD1306_ADDR_W);
-    twi_write(SSD1306_CTRL_CMD);
-    twi_write(c1);
-    twi_write(c2);
-    twi_stop();
+    tft_set_addr(x, y, (uint8_t)(x + w - 1U), (uint8_t)(y + h - 1U));
+    dc_high();
+    cs_low();
+    stream_pixels(color, (uint16_t)w * (uint16_t)h);
+    cs_high();
 }
 
-/* Opens a data-stream transaction to the OLED. */
-static void oled_dat_begin(void)
-{
-    twi_start();
-    twi_write(SSD1306_ADDR_W);
-    twi_write(SSD1306_CTRL_DAT);
-}
+/* ── Character rendering ─────────────────────────────────────────────────── */
 
-/* Sends one data byte within an open data-stream transaction. */
-static void oled_dat_byte(uint8_t b)
-{
-    twi_write(b);
-}
-
-/* Closes the data-stream transaction. */
-static void oled_dat_end(void)
-{
-    twi_stop();
-}
-
-/* Doubles each bit of a 4-bit nibble into a pair of bits for double-height rendering. */
-static uint8_t expand_nibble(uint8_t nibble)
-{
-    uint8_t r = 0U;
-    if (nibble & 0x01U) r |= 0x03U;
-    if (nibble & 0x02U) r |= 0x0CU;
-    if (nibble & 0x04U) r |= 0x30U;
-    if (nibble & 0x08U) r |= 0xC0U;
-    return r;
-}
-
-/* Initialises TWI at 400 kHz and brings the SSD1306 out of reset. */
-void display_init(void)
-{
-    TWSR0 &= ~((1 << TWPS1) | (1 << TWPS0));
-    TWBR0  = TWI_TWBR_400K;
-    TWCR0  = (1 << TWEN);
-
-    oled_cmd (0xAE);
-    oled_cmd2(0xD5, 0x80);
-    oled_cmd2(0xA8, 0x3F);
-    oled_cmd2(0xD3, 0x00);
-    oled_cmd (0x40);
-    oled_cmd2(0x8D, 0x14);
-    oled_cmd2(0x20, 0x02);
-    oled_cmd (0xA1);
-    oled_cmd (0xC8);
-    oled_cmd2(0xDA, 0x12);
-    oled_cmd2(0x81, 0xCF);
-    oled_cmd2(0xD9, 0xF1);
-    oled_cmd2(0xDB, 0x40);
-    oled_cmd (0xA4);
-    oled_cmd (0xA6);
-    oled_cmd (0xAF);
-
-    display_clear();
-}
-
-/* Fills the entire display with black. */
-void display_clear(void)
-{
-    for (uint8_t p = 0U; p < SSD1306_PAGES; p++) {
-        display_set_cursor(0U, p);
-        oled_dat_begin();
-        for (uint8_t c = 0U; c < SSD1306_COLS; c++) {
-            oled_dat_byte(0x00U);
-        }
-        oled_dat_end();
-    }
-}
-
-/* Sets the OLED write position to the given column and page. */
-void display_set_cursor(uint8_t col, uint8_t page)
-{
-    oled_cmd((uint8_t)(0xB0U | (page & 0x07U)));
-    oled_cmd((uint8_t)(0x00U | (col  & 0x0FU)));
-    oled_cmd((uint8_t)(0x10U | ((col >> 4) & 0x0FU)));
-}
-
-/* Renders a single ASCII character at the current cursor position. */
-void display_print_char(char c)
+/* Draws one ASCII character at pixel (x, y) using the given scale and colours.
+ * Rendered width  = (5 + 1) × scale   (5 glyph columns + 1 spacing column).
+ * Rendered height = 8 × scale.
+ * Pixels are written in a single batched RAMWR stream (row-major order). */
+static void draw_char_scaled(uint8_t x, uint8_t y, char c,
+                              uint8_t scale, uint16_t fg, uint16_t bg)
 {
     if ((uint8_t)c < 0x20U || (uint8_t)c > 0x7EU) c = '?';
     uint8_t idx = (uint8_t)c - 0x20U;
 
-    oled_dat_begin();
-    for (uint8_t col = 0U; col < 5U; col++) {
-        oled_dat_byte(pgm_read_byte(&font5x8[idx][col]));
+    /* Cache 5 column bytes from flash into SRAM to avoid repeated pgm_read. */
+    uint8_t cols[5];
+    for (uint8_t i = 0U; i < 5U; i++) {
+        cols[i] = pgm_read_byte(&font5x8[idx][i]);
     }
-    oled_dat_byte(0x00U);
-    oled_dat_end();
+
+    uint8_t char_w = (uint8_t)(6U * scale);  /* 5 data + 1 gap, scaled */
+    uint8_t char_h = (uint8_t)(8U * scale);
+
+    tft_set_addr(x, y, (uint8_t)(x + char_w - 1U), (uint8_t)(y + char_h - 1U));
+    dc_high();
+    cs_low();
+
+    /* Iterate font rows (bit position = vertical pixel), then scale vertically.
+     * Within each scaled row, output all x-pixels (5 glyph cols + gap), scaled. */
+    for (uint8_t row = 0U; row < 8U; row++) {
+        for (uint8_t sr = 0U; sr < scale; sr++) {          /* vertical scale */
+            for (uint8_t col = 0U; col < 5U; col++) {      /* glyph columns  */
+                uint16_t px = (cols[col] & (1U << row)) ? fg : bg;
+                uint8_t  phi = (uint8_t)(px >> 8);
+                uint8_t  plo = (uint8_t)(px & 0xFFU);
+                for (uint8_t sc = 0U; sc < scale; sc++) {  /* horizontal scale */
+                    spi_byte(phi); spi_byte(plo);
+                }
+            }
+            /* Spacing / gap column */
+            for (uint8_t sc = 0U; sc < scale; sc++) {
+                spi_byte((uint8_t)(bg >> 8));
+                spi_byte((uint8_t)(bg & 0xFFU));
+            }
+        }
+    }
+
+    cs_high();
 }
 
-/* Renders a null-terminated string at the current cursor position. */
+/* ── Busy-wait delay (used only during init before Timer0 is running) ─────── */
+static void delay_ms(uint16_t ms)
+{
+    /* ~1 ms per step at 16 MHz / -O1; exact timing is not critical for display init. */
+    while (ms--) {
+        for (volatile uint16_t i = 0U; i < 3200U; i++);
+    }
+}
+
+/* ── ST7735R power-on initialisation sequence ────────────────────────────── */
+/* Follows the standard Adafruit "R-type" init: frame rate, power control,   */
+/* gamma correction, 16-bit colour (RGB565), portrait orientation.            */
+void display_init(void)
+{
+    /* Set all TFT control pins as outputs. */
+    DDRB |= (1U << TFT_MOSI) | (1U << TFT_SCK) | (1U << TFT_CS);
+    DDRC |= (1U << TFT_DC)   | (1U << TFT_RST);
+
+    /* Idle state: SCK/MOSI low, CS high (deselected), DC low. */
+    PORTB &= ~((1U << TFT_MOSI) | (1U << TFT_SCK));
+    cs_high();
+    dc_low();
+
+    /* Hardware reset: pull RST low for 10 ms then release. */
+    PORTC &= ~(1U << TFT_RST);  delay_ms(10U);
+    PORTC |=  (1U << TFT_RST);  delay_ms(120U);
+
+    tft_cmd(ST_SWRESET);  delay_ms(150U);  /* software reset          */
+    tft_cmd(ST_SLPOUT);   delay_ms(500U);  /* exit sleep mode         */
+
+    /* Frame rate control: normal / idle / partial modes. */
+    tft_cmd(ST_FRMCTR1); tft_data(0x01U); tft_data(0x2CU); tft_data(0x2DU);
+    tft_cmd(ST_FRMCTR2); tft_data(0x01U); tft_data(0x2CU); tft_data(0x2DU);
+    tft_cmd(ST_FRMCTR3);
+        tft_data(0x01U); tft_data(0x2CU); tft_data(0x2DU);
+        tft_data(0x01U); tft_data(0x2CU); tft_data(0x2DU);
+
+    tft_cmd(ST_INVCTR);  tft_data(0x07U); /* column inversion control */
+
+    /* Power control registers. */
+    tft_cmd(ST_PWCTR1); tft_data(0xA2U); tft_data(0x02U); tft_data(0x84U);
+    tft_cmd(ST_PWCTR2); tft_data(0xC5U);
+    tft_cmd(ST_PWCTR3); tft_data(0x0AU); tft_data(0x00U);
+    tft_cmd(ST_PWCTR4); tft_data(0x8AU); tft_data(0x2AU);
+    tft_cmd(ST_PWCTR5); tft_data(0x8AU); tft_data(0xEEU);
+    tft_cmd(ST_VMCTR1); tft_data(0x0EU); /* VCOM control             */
+
+    tft_cmd(ST_INVOFF);                   /* display inversion off    */
+
+    /* Memory access: portrait orientation, RGB colour order. */
+    tft_cmd(ST_MADCTL); tft_data(0x00U);
+
+    /* Colour mode: 16-bit RGB565. */
+    tft_cmd(ST_COLMOD); tft_data(0x05U);
+
+    /* Positive gamma correction. */
+    tft_cmd(ST_GMCTRP1);
+        tft_data(0x02U); tft_data(0x1CU); tft_data(0x07U); tft_data(0x12U);
+        tft_data(0x37U); tft_data(0x32U); tft_data(0x29U); tft_data(0x2DU);
+        tft_data(0x29U); tft_data(0x25U); tft_data(0x2BU); tft_data(0x39U);
+        tft_data(0x00U); tft_data(0x01U); tft_data(0x03U); tft_data(0x10U);
+
+    /* Negative gamma correction. */
+    tft_cmd(ST_GMCTRN1);
+        tft_data(0x03U); tft_data(0x1DU); tft_data(0x07U); tft_data(0x06U);
+        tft_data(0x2EU); tft_data(0x2CU); tft_data(0x29U); tft_data(0x2DU);
+        tft_data(0x2EU); tft_data(0x2EU); tft_data(0x37U); tft_data(0x3FU);
+        tft_data(0x00U); tft_data(0x00U); tft_data(0x02U); tft_data(0x10U);
+
+    tft_cmd(ST_NORON);  delay_ms(10U);    /* normal display mode on   */
+    tft_cmd(ST_DISPON); delay_ms(100U);   /* display on               */
+
+    display_clear();
+}
+
+/* ── Public API ──────────────────────────────────────────────────────────── */
+
+void display_clear(void)
+{
+    tft_fill_rect(0U, 0U, SCREEN_W, SCREEN_H, COL_BLACK);
+}
+
+/* Maps page-based SSD1306-style coordinates to pixel positions:
+ *   x = col × 6   (6 px per character column)
+ *   y = page × 9  (9 px per character row) */
+void display_set_cursor(uint8_t col, uint8_t page)
+{
+    g_cursor_x = (uint8_t)(col  * 6U);
+    g_cursor_y = (uint8_t)(page * 9U);
+}
+
+/* Renders one character at the cursor position and advances by 6 px. */
+void display_print_char(char c)
+{
+    draw_char_scaled(g_cursor_x, g_cursor_y, c, 1U, COL_WHITE, COL_BLACK);
+    g_cursor_x += 6U;
+}
+
 void display_print_string(const char *s)
 {
-    while (*s) {
-        display_print_char(*s++);
-    }
+    while (*s) display_print_char(*s++);
 }
 
-/* Renders a note name looked up from PROGMEM by index. */
 void display_print_note(uint8_t note_index)
 {
-    if (note_index >= NUM_GUITAR_NOTES) {
-        display_print_string("???");
-        return;
-    }
-    char name[4];
-    note_name_get(note_index, name);
+    char name[4] = "???";
+    if (note_index < NUM_GUITAR_NOTES) note_name_get(note_index, name);
     display_print_string(name);
 }
 
-/* Draws a horizontal whammy-bar level indicator on page 7. */
+/* Draws a 16-segment whammy bar at WHAMMY_Y.
+ * Each segment is 7 px wide with a 1 px black gap; green when filled, grey when empty. */
 void display_show_whammy(uint8_t adc_val)
 {
-    uint8_t bar_px = (uint8_t)((uint16_t)adc_val * SSD1306_COLS / 256U);
-
-    display_set_cursor(0U, 7U);
-    oled_dat_begin();
-    for (uint8_t px = 0U; px < SSD1306_COLS; px++) {
-        oled_dat_byte((px < bar_px) ? 0x7EU : 0x00U);
+    uint8_t filled = (uint8_t)(((uint16_t)adc_val * 16U) / 256U);
+    for (uint8_t seg = 0U; seg < 16U; seg++) {
+        uint16_t color = (seg < filled) ? COL_GREEN : COL_GREY;
+        tft_fill_rect((uint8_t)(seg * 8U),       WHAMMY_Y, 7U, WHAMMY_H, color);
+        tft_fill_rect((uint8_t)(seg * 8U + 7U),  WHAMMY_Y, 1U, WHAMMY_H, COL_BLACK);
     }
-    oled_dat_end();
 }
 
-/* Refreshes the note name on row 0 and the whammy bar on row 7. */
 void display_update(uint8_t note_idx, uint16_t whammy)
 {
     display_set_cursor(0U, 0U);
     display_print_string("Note: ");
     display_print_note(note_idx);
-    display_print_string("     ");
-
     display_show_whammy((uint8_t)(whammy >> 2));
 }
 
-/* Full UI refresh: double-height note name, whammy segments, and status text. */
-void display_update_ui(uint8_t note_index, uint8_t whammy,
-                       bool muted, bool strumming)
+/* ── Private: draw the note name large and centred in NOTE_Y area ─────────── */
+static void draw_note_large(uint8_t note_index)
 {
-    char     name[4]    = "???";
-    uint8_t  upper_buf[48];
-    uint8_t  lower_buf[48];
-    uint8_t  buf_len = 0U;
+    char    name[4] = "???";
+    uint8_t len     = 3U;
 
     if (note_index < NUM_GUITAR_NOTES) {
         note_name_get(note_index, name);
+        len = 0U;
+        while (name[len]) len++;
     }
 
-    for (uint8_t ci = 0U; name[ci] != '\0' && buf_len < 46U; ci++) {
-        uint8_t chr_idx = ((uint8_t)name[ci] >= 0x20U) ?
-                          (uint8_t)name[ci] - 0x20U : 0U;
+    uint8_t char_w  = (uint8_t)(6U * NOTE_SCALE);          /* 24 px per char */
+    uint8_t total_w = (uint8_t)((uint16_t)len * char_w);
+    uint8_t x0      = (uint8_t)((SCREEN_W - total_w) / 2U);
 
-        for (uint8_t col = 0U; col < 5U; col++) {
-            uint8_t fb    = pgm_read_byte(&font5x8[chr_idx][col]);
-            uint8_t upper = expand_nibble(fb & 0x0FU);
-            uint8_t lower = expand_nibble((fb >> 4) & 0x0FU);
-            upper_buf[buf_len]     = upper;
-            upper_buf[buf_len + 1] = upper;
-            lower_buf[buf_len]     = lower;
-            lower_buf[buf_len + 1] = lower;
-            buf_len += 2U;
-        }
-        upper_buf[buf_len]     = 0x00U;
-        upper_buf[buf_len + 1] = 0x00U;
-        lower_buf[buf_len]     = 0x00U;
-        lower_buf[buf_len + 1] = 0x00U;
-        buf_len += 2U;
+    /* Clear entire note area to avoid stale pixels from longer names. */
+    tft_fill_rect(0U, NOTE_Y, SCREEN_W, NOTE_H, COL_BLACK);
+
+    for (uint8_t i = 0U; i < len; i++) {
+        draw_char_scaled((uint8_t)(x0 + (uint16_t)i * char_w), NOTE_Y,
+                         name[i], NOTE_SCALE, COL_WHITE, COL_BLACK);
     }
+}
 
-    display_set_cursor(4U, 0U);
-    oled_dat_begin();
-    for (uint8_t i = 0U; i < buf_len; i++) oled_dat_byte(upper_buf[i]);
-    for (uint8_t rem = (uint8_t)(4U + buf_len); rem < SSD1306_COLS; rem++) {
-        oled_dat_byte(0x00U);
-    }
-    oled_dat_end();
+/* ── Private: draw the status line ───────────────────────────────────────── */
+static void draw_status(bool muted, bool strumming)
+{
+    tft_fill_rect(0U, STATUS_Y, SCREEN_W, STATUS_H, COL_BLACK);
 
-    display_set_cursor(4U, 1U);
-    oled_dat_begin();
-    for (uint8_t i = 0U; i < buf_len; i++) oled_dat_byte(lower_buf[i]);
-    for (uint8_t rem = (uint8_t)(4U + buf_len); rem < SSD1306_COLS; rem++) {
-        oled_dat_byte(0x00U);
-    }
-    oled_dat_end();
+    const char *msg   = 0;
+    uint16_t    color = COL_WHITE;
 
-    {
-        uint8_t filled_segs = whammy >> 4;
-        display_set_cursor(0U, 2U);
-        oled_dat_begin();
-        for (uint8_t seg = 0U; seg < 16U; seg++) {
-            uint8_t fill = (seg < filled_segs) ? 0x3CU : 0x00U;
-            for (uint8_t px = 0U; px < 7U; px++) {
-                oled_dat_byte(fill);
-            }
-            oled_dat_byte(0x00U);
-        }
-        oled_dat_end();
-    }
-
-    display_set_cursor(0U, 3U);
     if (muted) {
-        display_print_string("  [ MUTED ]            ");
+        msg   = "   [ MUTED ]";
+        color = COL_RED;
     } else if (strumming) {
-        display_print_string("  ** STRUM! **         ");
-    } else {
-        display_print_string("                       ");
+        msg   = "  ** STRUM! **";
+        color = COL_YELLOW;
+    }
+
+    if (msg) {
+        uint8_t x = 2U;
+        while (*msg) {
+            draw_char_scaled(x, STATUS_Y, *msg, 1U, color, COL_BLACK);
+            x   += 6U;
+            msg++;
+        }
+    }
+}
+
+/* Full UI refresh.
+ * Redraws the note name only when the note index changes.
+ * Redraws the whammy bar only when the filled-segment count changes.
+ * Redraws the status line only when muted/strumming state changes. */
+void display_update_ui(uint8_t note_index, uint8_t whammy,
+                       bool muted, bool strumming)
+{
+    static uint8_t last_note   = 0xFFU;
+    static uint8_t last_segs   = 0xFFU;
+    static uint8_t last_muted  = 0xFFU;
+    static uint8_t last_strum  = 0xFFU;
+
+    if (note_index != last_note) {
+        last_note = note_index;
+        draw_note_large(note_index);
+    }
+
+    uint8_t segs = (uint8_t)(((uint16_t)whammy * 16U) / 256U);
+    if (segs != last_segs) {
+        last_segs = segs;
+        display_show_whammy(whammy);
+    }
+
+    uint8_t m = muted     ? 1U : 0U;
+    uint8_t s = strumming ? 1U : 0U;
+    if (m != last_muted || s != last_strum) {
+        last_muted = m;
+        last_strum = s;
+        draw_status(muted, strumming);
     }
 
     g_display_dirty = 0U;

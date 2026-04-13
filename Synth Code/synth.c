@@ -90,7 +90,7 @@ ISR(TIMER1_COMPA_vect)
     uint32_t out  = ((uint32_t)sample       * (uint32_t)gain +
                      (uint32_t)32768U * (uint32_t)(65535U - gain)) >> 16;
 
-    spi_dac_write((uint16_t)out);
+    pwm_audio_write((uint16_t)out);
 }
 
 /* Starts Timer1 in CTC mode to fire the audio ISR at 31250 Hz. */
