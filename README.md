@@ -109,17 +109,29 @@ We will first demonstrate the functionality of the joystick selector and display
 
 ### Last week's progress
 
+We took apart the original guitar and tested each interface button, stick and switch with a multimeter to make sure current flowed through them and they were functional. We decided to pivot from an analog synthesizer to a digital synthesizer that operates off of code, and created the first draft of this code for our intial test. We also noticed that the main board which we'd be replacing in the guitar did not fit properly with the internals, so we created a CAD model of the board to laser cut a new one with more leeway in the measurements for the openings to make it slot in seamlessly.
+
 ### Current state of project
 
+We're still waiting on the remainder of our parts to come in so we can assmeble the system, flash the code and run our intial tests, but for now we've decided to pivot our strategy from connecting only through jumper wires to instead running connections through copper tape on our new iteration of the internal board, as per our team manager's suggestion.
+
 ### Next week's plan
+
+Build the first full working version of the guitar, test the existing code and mke changes as needed, then begin adding LCD screen functionality.
 
 ## Sprint Review #2
 
 ### Last week's progress
 
+We built a breadboarded prototype of the system with the parts available in detkin since our ADC and a few other Adafruit parts still hadn't come in. We had to make a few code changes to account for the difference in functionality due to the lack of an ADC but eventually got decent sound output as desired, then wired up the LCD display though it still isn't functional and doesn't correspond to notes/inputs like we want it to.
+
 ### Current state of project
 
+We have a working prototype and are considering using the same no-ADC method in our MVP to reduce complexity and get a full built working version as soon as possible.
+
 ### Next week's plan
+
+Print the main master board and solder the system using the wiring format we've used in our prototype and fit it to the actual guitar, fix the LCD screen to at least show some response to inputs even if it isn't fully functional yet.
 
 ## MVP Demo
 
