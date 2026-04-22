@@ -10,7 +10,7 @@
 #include "notes.h"
 
 /* -------------------------------------------------------------------------- */
-/* Pin definitions                                                             */
+/* Pinout                                                                      */
 /* -------------------------------------------------------------------------- */
 
 #define TFT_MOSI   PB4
@@ -23,61 +23,60 @@
 /* ST7789 commands                                                             */
 /* -------------------------------------------------------------------------- */
 
-#define ST_SWRESET    0x01U
-#define ST_SLPOUT     0x11U
-#define ST_NORON      0x13U
-#define ST_INVOFF     0x20U
-#define ST_INVON      0x21U
-#define ST_DISPON     0x29U
-#define ST_CASET      0x2AU
-#define ST_RASET      0x2BU
-#define ST_RAMWR      0x2CU
-#define ST_MADCTL     0x36U
-#define ST_COLMOD     0x3AU
-#define ST_PORCTRL    0xB2U
-#define ST_GCTRL      0xB7U
-#define ST_VCOMS      0xBBU
-#define ST_LCMCTRL    0xC0U
-#define ST_VDVVRHEN   0xC2U
-#define ST_VRHS       0xC3U
-#define ST_VDVS       0xC4U
-#define ST_FRCTRL2    0xC6U
-#define ST_PWCTRL1    0xD0U
-#define ST_PVGAMCTRL  0xE0U
-#define ST_NVGAMCTRL  0xE1U
+#define ST_SWRESET   0x01U
+#define ST_SLPOUT    0x11U
+#define ST_INVON     0x21U
+#define ST_DISPON    0x29U
+#define ST_CASET     0x2AU
+#define ST_RASET     0x2BU
+#define ST_RAMWR     0x2CU
+#define ST_MADCTL    0x36U
+#define ST_COLMOD    0x3AU
+#define ST_PORCTRL   0xB2U
+#define ST_GCTRL     0xB7U
+#define ST_VCOMS     0xBBU
+#define ST_LCMCTRL   0xC0U
+#define ST_VDVVRHEN  0xC2U
+#define ST_VRHS      0xC3U
+#define ST_VDVS      0xC4U
+#define ST_FRCTRL2   0xC6U
+#define ST_PWCTRL1   0xD0U
+#define ST_PVGAMCTRL 0xE0U
+#define ST_NVGAMCTRL 0xE1U
 
 /* -------------------------------------------------------------------------- */
-/* Display geometry                                                            */
+/* Geometry                                                                    */
 /* -------------------------------------------------------------------------- */
 
-/* Landscape UI: 320 x 240 */
 #define SCREEN_W    320U
 #define SCREEN_H    240U
 
-#define COL_OFFSET  0U
-#define ROW_OFFSET  0U
+#ifndef DISPLAY_NUM_BUTTONS
+#define DISPLAY_NUM_BUTTONS 5U
+#endif
+
+#ifndef DISPLAY_COMMIT_MS
+#define DISPLAY_COMMIT_MS 500UL
+#endif
 
 /* -------------------------------------------------------------------------- */
-/* Colors (RGB565)                                                             */
+/* Colors                                                                      */
 /* -------------------------------------------------------------------------- */
 
-#define COL_BLACK      0x0000U
-#define COL_WHITE      0xFFFFU
-#define COL_BG         0x0010U   /* dark blue-black */
-#define COL_PANEL_BG   0x0851U   /* dark slate blue */
-#define COL_WHEEL_BG   0x10A2U   /* dark gray-blue */
-#define COL_DIM_TEXT   0xBDF7U
-#define COL_BORDER     0xFFFFU
-#define COL_ARROW      0xFFE0U
+#define COL_BLACK       0x0000U
+#define COL_WHITE       0xFFFFU
+#define COL_BG          0x0006U
+#define COL_WHEEL_BG    0x1083U
+#define COL_DIM_TEXT    0xBDF7U
+#define COL_BORDER      0xFFFFU
+#define COL_ARROW       0xFFE0U
 
-/* Button base colors */
 #define COL_GREEN_BTN   0x07E0U
 #define COL_RED_BTN     0xF800U
 #define COL_YELLOW_BTN  0xFFE0U
 #define COL_BLUE_BTN    0x001FU
 #define COL_ORANGE_BTN  0xFD20U
 
-/* Lighter selected variants */
 #define COL_GREEN_SEL   0x87F0U
 #define COL_RED_SEL     0xFBB0U
 #define COL_YELLOW_SEL  0xFFF0U
@@ -88,24 +87,21 @@
 /* Layout                                                                      */
 /* -------------------------------------------------------------------------- */
 
-#define OUTER_PAD      10U
-#define MID_GAP        10U
+#define LEFT_X      8U
+#define LEFT_Y      12U
+#define LEFT_W      146U
+#define ROW_H       34U
+#define ROW_GAP      8U
 
-#define LEFT_X         OUTER_PAD
-#define LEFT_Y         14U
-#define LEFT_W         142U
-#define ROW_H          34U
-#define ROW_GAP        8U
+#define RIGHT_X     166U
+#define RIGHT_Y      12U
+#define RIGHT_W     146U
+#define RIGHT_H     200U
 
-#define RIGHT_X        (LEFT_X + LEFT_W + MID_GAP)
-#define RIGHT_Y        14U
-#define RIGHT_W        158U
-#define RIGHT_H        212U
-
-#define STATUS_Y       228U
+#define STATUS_Y    218U
 
 /* -------------------------------------------------------------------------- */
-/* Module state                                                                */
+/* State                                                                       */
 /* -------------------------------------------------------------------------- */
 
 volatile uint8_t g_display_dirty = 0U;
@@ -114,22 +110,17 @@ static uint8_t g_cursor_x = 0U;
 static uint8_t g_cursor_y = 0U;
 
 static uint8_t g_selected_button = 0U;
-static uint8_t g_preview_note = 0U;
-static uint8_t g_button_notes[5] = {
-    GUITAR_NOTE_C3,
-    GUITAR_NOTE_E3,
-    GUITAR_NOTE_G3,
-    GUITAR_NOTE_B3,
-    GUITAR_NOTE_E4
+static uint8_t g_selected_note   = 8U;
+static uint8_t g_button_notes[DISPLAY_NUM_BUTTONS] = {
+    8U, 12U, 15U, 19U, 24U
 };
 
-static uint32_t g_preview_change_ms = 0U;
-static uint8_t  g_commit_pending = 0U;
+static uint8_t  g_commit_pending  = 0U;
+static uint32_t g_commit_deadline = 0UL;
 
-static uint8_t g_last_ui_note   = 0xFFU;
-static uint8_t g_last_ui_whammy = 0xFFU;
-static uint8_t g_last_ui_muted  = 0xFFU;
-static uint8_t g_last_ui_strum  = 0xFFU;
+static const char *button_labels[DISPLAY_NUM_BUTTONS] = {
+    "GREEN", "RED", "YELLOW", "BLUE", "ORANGE"
+};
 
 /* -------------------------------------------------------------------------- */
 /* 5x8 font                                                                    */
@@ -170,14 +161,10 @@ static const uint8_t font5x8[95][5] PROGMEM = {
     {0x00,0x41,0x36,0x08,0x00},{0x08,0x08,0x2A,0x1C,0x08}
 };
 
-/* -------------------------------------------------------------------------- */
-/* Low-level helpers                                                           */
-/* -------------------------------------------------------------------------- */
-
-static inline void cs_low(void)  { PORTB &= ~(1U << TFT_CS);  }
-static inline void cs_high(void) { PORTB |=  (1U << TFT_CS);  }
-static inline void dc_low(void)  { PORTC &= ~(1U << TFT_DC);  }
-static inline void dc_high(void) { PORTC |=  (1U << TFT_DC);  }
+static inline void cs_low(void)  { PORTB &= ~(1U << TFT_CS); }
+static inline void cs_high(void) { PORTB |=  (1U << TFT_CS); }
+static inline void dc_low(void)  { PORTC &= ~(1U << TFT_DC); }
+static inline void dc_high(void) { PORTC |=  (1U << TFT_DC); }
 
 static void delay_ms(uint16_t ms)
 {
@@ -186,12 +173,64 @@ static void delay_ms(uint16_t ms)
     }
 }
 
+static uint16_t button_fill_color(uint8_t idx, bool selected)
+{
+    switch (idx) {
+    case 0U: return selected ? COL_GREEN_SEL  : COL_GREEN_BTN;
+    case 1U: return selected ? COL_RED_SEL    : COL_RED_BTN;
+    case 2U: return selected ? COL_YELLOW_SEL : COL_YELLOW_BTN;
+    case 3U: return selected ? COL_BLUE_SEL   : COL_BLUE_BTN;
+    default: return selected ? COL_ORANGE_SEL : COL_ORANGE_BTN;
+    }
+}
+
+static uint16_t button_text_color(bool selected)
+{
+    return selected ? COL_BLACK : COL_WHITE;
+}
+
+static uint8_t wrap_button_index(int16_t idx)
+{
+    while (idx < 0) idx += DISPLAY_NUM_BUTTONS;
+    while (idx >= DISPLAY_NUM_BUTTONS) idx -= DISPLAY_NUM_BUTTONS;
+    return (uint8_t)idx;
+}
+
+static uint8_t wrap_note_index(int16_t idx)
+{
+    while (idx < 0) idx += NUM_GUITAR_NOTES;
+    while (idx >= NUM_GUITAR_NOTES) idx -= NUM_GUITAR_NOTES;
+    return (uint8_t)idx;
+}
+
+static void note_name_local(uint8_t idx, char out[4])
+{
+    static const char note_names[NUM_GUITAR_NOTES][4] = {
+        "E2",  "F2",  "F#2", "G2",  "G#2",
+        "A2",  "A#2", "B2",  "C3",  "C#3",
+        "D3",  "D#3", "E3",  "F3",  "F#3",
+        "G3",  "G#3", "A3",  "A#3", "B3",
+        "C4",  "C#4", "D4",  "D#4", "E4"
+    };
+
+    if (idx < NUM_GUITAR_NOTES) {
+        out[0] = note_names[idx][0];
+        out[1] = note_names[idx][1];
+        out[2] = note_names[idx][2];
+        out[3] = '\0';
+    } else {
+        out[0] = '?';
+        out[1] = '?';
+        out[2] = '?';
+        out[3] = '\0';
+    }
+}
+
 static void spi_byte(uint8_t b)
 {
     for (uint8_t i = 0U; i < 8U; i++) {
         if (b & 0x80U) PORTB |=  (1U << TFT_MOSI);
         else           PORTB &= ~(1U << TFT_MOSI);
-
         PORTB |=  (1U << TFT_SCK);
         PORTB &= ~(1U << TFT_SCK);
         b <<= 1U;
@@ -217,16 +256,16 @@ static void tft_data(uint8_t d)
 static void tft_set_addr(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1)
 {
     tft_cmd(ST_CASET);
-    tft_data((uint8_t)(((x0 + COL_OFFSET) >> 8) & 0xFFU));
-    tft_data((uint8_t)((x0 + COL_OFFSET) & 0xFFU));
-    tft_data((uint8_t)(((x1 + COL_OFFSET) >> 8) & 0xFFU));
-    tft_data((uint8_t)((x1 + COL_OFFSET) & 0xFFU));
+    tft_data((uint8_t)(x0 >> 8));
+    tft_data((uint8_t)(x0 & 0xFFU));
+    tft_data((uint8_t)(x1 >> 8));
+    tft_data((uint8_t)(x1 & 0xFFU));
 
     tft_cmd(ST_RASET);
-    tft_data((uint8_t)(((y0 + ROW_OFFSET) >> 8) & 0xFFU));
-    tft_data((uint8_t)((y0 + ROW_OFFSET) & 0xFFU));
-    tft_data((uint8_t)(((y1 + ROW_OFFSET) >> 8) & 0xFFU));
-    tft_data((uint8_t)((y1 + ROW_OFFSET) & 0xFFU));
+    tft_data((uint8_t)(y0 >> 8));
+    tft_data((uint8_t)(y0 & 0xFFU));
+    tft_data((uint8_t)(y1 >> 8));
+    tft_data((uint8_t)(y1 & 0xFFU));
 
     tft_cmd(ST_RAMWR);
 }
@@ -235,7 +274,6 @@ static void stream_pixels(uint16_t color, uint32_t count)
 {
     uint8_t hi = (uint8_t)(color >> 8);
     uint8_t lo = (uint8_t)(color & 0xFFU);
-
     while (count--) {
         spi_byte(hi);
         spi_byte(lo);
@@ -244,9 +282,8 @@ static void stream_pixels(uint16_t color, uint32_t count)
 
 static void tft_fill_rect(uint16_t x, uint16_t y, uint16_t w, uint16_t h, uint16_t color)
 {
-    if ((w == 0U) || (h == 0U)) return;
+    if (w == 0U || h == 0U) return;
     if (x >= SCREEN_W || y >= SCREEN_H) return;
-
     if (x + w > SCREEN_W) w = SCREEN_W - x;
     if (y + h > SCREEN_H) h = SCREEN_H - y;
 
@@ -262,18 +299,13 @@ static void tft_draw_hline(uint16_t x, uint16_t y, uint16_t w, uint16_t color)
     tft_fill_rect(x, y, w, 1U, color);
 }
 
-static void tft_draw_vline(uint16_t x, uint16_t y, uint16_t h, uint16_t color)
-{
-    tft_fill_rect(x, y, 1U, h, color);
-}
-
 static void tft_draw_rect(uint16_t x, uint16_t y, uint16_t w, uint16_t h, uint16_t color)
 {
     if (w < 1U || h < 1U) return;
-    tft_draw_hline(x, y, w, color);
-    tft_draw_hline(x, y + h - 1U, w, color);
-    tft_draw_vline(x, y, h, color);
-    tft_draw_vline(x + w - 1U, y, h, color);
+    tft_fill_rect(x, y, w, 1U, color);
+    tft_fill_rect(x, (uint16_t)(y + h - 1U), w, 1U, color);
+    tft_fill_rect(x, y, 1U, h, color);
+    tft_fill_rect((uint16_t)(x + w - 1U), y, 1U, h, color);
 }
 
 static void draw_char_scaled(uint16_t x, uint16_t y, char c, uint8_t scale,
@@ -283,9 +315,7 @@ static void draw_char_scaled(uint16_t x, uint16_t y, char c, uint8_t scale,
     uint8_t idx = (uint8_t)c - 0x20U;
 
     uint8_t cols[5];
-    for (uint8_t i = 0U; i < 5U; i++) {
-        cols[i] = pgm_read_byte(&font5x8[idx][i]);
-    }
+    for (uint8_t i = 0U; i < 5U; i++) cols[i] = pgm_read_byte(&font5x8[idx][i]);
 
     uint16_t char_w = (uint16_t)(6U * scale);
     uint16_t char_h = (uint16_t)(8U * scale);
@@ -313,7 +343,6 @@ static void draw_char_scaled(uint16_t x, uint16_t y, char c, uint8_t scale,
             }
         }
     }
-
     cs_high();
 }
 
@@ -343,164 +372,94 @@ static void draw_string_centered(uint16_t x, uint16_t y, uint16_t w, const char 
     draw_string_scaled(x0, y, s, scale, fg, bg);
 }
 
-static void note_name_local(uint8_t idx, char out[4])
+static void draw_underlined_label(uint16_t x, uint16_t y, const char *s, uint8_t scale,
+                                  uint16_t fg, uint16_t bg, bool underline)
 {
-    static const char note_names[NUM_GUITAR_NOTES][4] = {
-        "E2",  "F2",  "F#2", "G2",  "G#2",
-        "A2",  "A#2", "B2",  "C3",  "C#3",
-        "D3",  "D#3", "E3",  "F3",  "F#3",
-        "G3",  "G#3", "A3",  "A#3", "B3",
-        "C4",  "C#4", "D4",  "D#4", "E4"
-    };
+    uint16_t w = str_px_w(s, scale);
+    draw_string_scaled(x, y, s, scale, fg, bg);
 
-    if (idx < NUM_GUITAR_NOTES) {
-        out[0] = note_names[idx][0];
-        out[1] = note_names[idx][1];
-        out[2] = note_names[idx][2];
-        out[3] = '\0';
-    } else {
-        out[0] = '?';
-        out[1] = '?';
-        out[2] = '?';
-        out[3] = '\0';
+    if (underline) {
+        uint16_t uy = y + (uint16_t)(8U * scale) + 1U;
+        tft_draw_hline(x, uy, w, COL_WHITE);
     }
 }
 
-static uint16_t button_fill_color(uint8_t idx, bool selected)
+static void draw_ui_full(void)
 {
-    switch (idx) {
-    case 0U: return selected ? COL_GREEN_SEL  : COL_GREEN_BTN;
-    case 1U: return selected ? COL_RED_SEL    : COL_RED_BTN;
-    case 2U: return selected ? COL_YELLOW_SEL : COL_YELLOW_BTN;
-    case 3U: return selected ? COL_BLUE_SEL   : COL_BLUE_BTN;
-    case 4U: return selected ? COL_ORANGE_SEL : COL_ORANGE_BTN;
-    default: return selected ? COL_WHITE : COL_PANEL_BG;
-    }
-}
+    tft_fill_rect(0U, 0U, SCREEN_W, SCREEN_H, COL_BG);
 
-static uint16_t button_text_color(uint8_t idx, bool selected)
-{
-    (void)idx;
-    return selected ? COL_BLACK : COL_WHITE;
-}
-
-/* -------------------------------------------------------------------------- */
-/* UI drawing                                                                  */
-/* -------------------------------------------------------------------------- */
-
-static const char *button_labels[5] = {
-    "GREEN",
-    "RED",
-    "YELLOW",
-    "BLUE",
-    "ORANGE"
-};
-
-static void draw_left_rows(void)
-{
-    for (uint8_t i = 0U; i < 5U; i++) {
+    for (uint8_t i = 0U; i < DISPLAY_NUM_BUTTONS; i++) {
         uint16_t y = LEFT_Y + (uint16_t)i * (ROW_H + ROW_GAP);
         bool selected = (i == g_selected_button);
         uint16_t fill = button_fill_color(i, selected);
-        uint16_t txt  = button_text_color(i, selected);
+        uint16_t txt  = button_text_color(selected);
+        char note[4];
 
         tft_fill_rect(LEFT_X, y, LEFT_W, ROW_H, fill);
         tft_draw_rect(LEFT_X, y, LEFT_W, ROW_H, COL_BORDER);
 
-        draw_string_scaled(LEFT_X + 8U,  y + 11U, button_labels[i], 2U, txt, fill);
-        draw_string_scaled(LEFT_X + 84U, y + 11U, "----", 2U, txt, fill);
+        draw_underlined_label(LEFT_X + 8U, y + 10U, button_labels[i], 2U, txt, fill, selected);
 
-        char nm[4];
-        note_name_local(g_button_notes[i], nm);
-        draw_string_scaled(LEFT_X + 118U, y + 11U, nm, 2U, txt, fill);
+        draw_string_scaled(LEFT_X + 92U, y + 10U, "-", 2U, txt, fill);
+        draw_string_scaled(LEFT_X + 104U, y + 10U, "-", 2U, txt, fill);
+        draw_string_scaled(LEFT_X + 116U, y + 10U, "-", 2U, txt, fill);
+
+        note_name_local(g_button_notes[i], note);
+        draw_string_scaled(LEFT_X + 124U, y + 10U, note, 2U, txt, fill);
     }
-}
 
-static void draw_right_wheel(void)
-{
     tft_fill_rect(RIGHT_X, RIGHT_Y, RIGHT_W, RIGHT_H, COL_WHEEL_BG);
     tft_draw_rect(RIGHT_X, RIGHT_Y, RIGHT_W, RIGHT_H, COL_BORDER);
 
-    draw_string_centered(RIGHT_X, RIGHT_Y + 10U, RIGHT_W, "NOTE SELECT", 2U,
-                         COL_WHITE, COL_WHEEL_BG);
+    draw_string_centered(RIGHT_X, RIGHT_Y + 8U, RIGHT_W, "NOTE", 2U, COL_WHITE, COL_WHEEL_BG);
 
     for (int8_t ofs = -2; ofs <= 2; ofs++) {
-        uint8_t idx = (uint8_t)((g_preview_note + NUM_GUITAR_NOTES + ofs) % NUM_GUITAR_NOTES);
-        char nm[4];
-        note_name_local(idx, nm);
-
+        uint8_t idx = wrap_note_index((int16_t)g_selected_note + ofs);
+        char note[4];
+        uint16_t y;
         uint8_t scale;
         uint16_t fg;
-        uint16_t bg = COL_WHEEL_BG;
-        uint16_t y;
 
-        if (ofs == 0) {
-            scale = 4U;
-            fg = COL_WHITE;
-            y = RIGHT_Y + 94U;
-        } else if (ofs == -1) {
-            scale = 2U;
-            fg = COL_DIM_TEXT;
-            y = RIGHT_Y + 60U;
-        } else if (ofs == 1) {
-            scale = 2U;
-            fg = COL_DIM_TEXT;
-            y = RIGHT_Y + 138U;
-        } else if (ofs == -2) {
-            scale = 2U;
-            fg = COL_DIM_TEXT;
+        if (ofs == -2) {
             y = RIGHT_Y + 34U;
-        } else {
             scale = 2U;
             fg = COL_DIM_TEXT;
-            y = RIGHT_Y + 172U;
+        } else if (ofs == -1) {
+            y = RIGHT_Y + 68U;
+            scale = 2U;
+            fg = COL_DIM_TEXT;
+        } else if (ofs == 0) {
+            y = RIGHT_Y + 104U;
+            scale = 3U;
+            fg = COL_WHITE;
+        } else if (ofs == 1) {
+            y = RIGHT_Y + 150U;
+            scale = 2U;
+            fg = COL_DIM_TEXT;
+        } else {
+            y = RIGHT_Y + 184U;
+            scale = 2U;
+            fg = COL_DIM_TEXT;
         }
 
-        draw_string_centered(RIGHT_X, y, RIGHT_W, nm, scale, fg, bg);
+        note_name_local(idx, note);
+        draw_string_centered(RIGHT_X, y, RIGHT_W, note, scale, fg, COL_WHEEL_BG);
     }
 
-    draw_string_scaled(RIGHT_X + 8U, RIGHT_Y + 103U, ">", 2U, COL_ARROW, COL_WHEEL_BG);
-    draw_string_scaled(RIGHT_X + RIGHT_W - 20U, RIGHT_Y + 103U, "<", 2U, COL_ARROW, COL_WHEEL_BG);
-}
-
-static void draw_commit_hint(void)
-{
-    uint16_t y = LEFT_Y + 5U * (ROW_H + ROW_GAP) + 2U;
-    tft_fill_rect(LEFT_X, y, LEFT_W, 20U, COL_BG);
+    draw_string_scaled(RIGHT_X + 10U, RIGHT_Y + 112U, ">", 2U, COL_ARROW, COL_WHEEL_BG);
+    draw_string_scaled(RIGHT_X + RIGHT_W - 22U, RIGHT_Y + 112U, "<", 2U, COL_ARROW, COL_WHEEL_BG);
 
     if (g_commit_pending) {
-        draw_string_scaled(LEFT_X + 4U, y + 2U, "Commit in 500ms", 2U, COL_WHITE, COL_BG);
+        draw_string_scaled(10U, STATUS_Y, "Commit in 500ms", 2U, COL_WHITE, COL_BG);
     }
+
+    g_display_dirty = 0U;
 }
-
-static void draw_status_line(bool muted, bool strumming)
-{
-    tft_fill_rect(0U, STATUS_Y, SCREEN_W, 12U, COL_BG);
-
-    if (muted) {
-        draw_string_scaled(8U, STATUS_Y + 1U, "MUTED", 2U, COL_WHITE, COL_BG);
-    } else if (strumming) {
-        draw_string_scaled(8U, STATUS_Y + 1U, "STRUM", 2U, COL_WHITE, COL_BG);
-    }
-}
-
-static void redraw_all(bool muted, bool strumming)
-{
-    tft_fill_rect(0U, 0U, SCREEN_W, SCREEN_H, COL_BG);
-    draw_left_rows();
-    draw_right_wheel();
-    draw_commit_hint();
-    draw_status_line(muted, strumming);
-}
-
-/* -------------------------------------------------------------------------- */
-/* Public API                                                                  */
-/* -------------------------------------------------------------------------- */
 
 void display_init(void)
 {
     DDRB |= (1U << TFT_MOSI) | (1U << TFT_SCK) | (1U << TFT_CS);
-    DDRC |= (1U << TFT_DC)   | (1U << TFT_RST);
+    DDRC |= (1U << TFT_DC) | (1U << TFT_RST);
 
     PORTB &= ~((1U << TFT_MOSI) | (1U << TFT_SCK));
     cs_high();
@@ -518,10 +477,10 @@ void display_init(void)
     delay_ms(120U);
 
     tft_cmd(ST_COLMOD);
-    tft_data(0x55U);          /* 16-bit color */
+    tft_data(0x55U);
     delay_ms(10U);
 
-    /* Landscape rotated 180 degrees from previous version */
+    /* 90 degrees right, RGB color order */
     tft_cmd(ST_MADCTL);
     tft_data(0xA0U);
 
@@ -572,20 +531,92 @@ void display_init(void)
     tft_cmd(ST_INVON);
     delay_ms(10U);
 
-    tft_cmd(ST_NORON);
-    delay_ms(10U);
-
     tft_cmd(ST_DISPON);
     delay_ms(120U);
 
-    g_preview_note = g_button_notes[g_selected_button];
-    redraw_all(true, false);
-    g_display_dirty = 0U;
+    g_selected_button = 0U;
+    g_selected_note = g_button_notes[g_selected_button];
+    g_commit_pending = 0U;
+    g_commit_deadline = 0UL;
+
+    display_force_redraw();
+    draw_ui_full();
 }
 
 void display_clear(void)
 {
     tft_fill_rect(0U, 0U, SCREEN_W, SCREEN_H, COL_BG);
+}
+
+void display_force_redraw(void)
+{
+    g_display_dirty = 1U;
+}
+
+void display_ui_tick(uint32_t now_ms)
+{
+    if (g_commit_pending) {
+        if ((int32_t)(now_ms - g_commit_deadline) >= 0) {
+            g_button_notes[g_selected_button] = g_selected_note;
+            g_commit_pending = 0U;
+            g_display_dirty = 1U;
+        }
+    }
+
+    if (g_display_dirty) {
+        draw_ui_full();
+    }
+}
+
+void display_move_button_selection(int8_t dir)
+{
+    g_selected_button = wrap_button_index((int16_t)g_selected_button + dir);
+    g_selected_note = g_button_notes[g_selected_button];
+    g_commit_pending = 0U;
+    g_display_dirty = 1U;
+}
+
+void display_move_note_selection(int8_t dir, uint32_t now_ms)
+{
+    g_selected_note = wrap_note_index((int16_t)g_selected_note + dir);
+    g_commit_pending = 1U;
+    g_commit_deadline = now_ms + DISPLAY_COMMIT_MS;
+    g_display_dirty = 1U;
+}
+
+void display_set_button_note(uint8_t button_idx, uint8_t note_idx)
+{
+    if (button_idx >= DISPLAY_NUM_BUTTONS || note_idx >= NUM_GUITAR_NOTES) return;
+
+    g_button_notes[button_idx] = note_idx;
+    if (button_idx == g_selected_button) {
+        g_selected_note = note_idx;
+        g_commit_pending = 0U;
+    }
+    g_display_dirty = 1U;
+}
+
+uint8_t display_get_button_note(uint8_t button_idx)
+{
+    if (button_idx >= DISPLAY_NUM_BUTTONS) return g_button_notes[0];
+    return g_button_notes[button_idx];
+}
+
+uint8_t display_get_selected_button(void)
+{
+    return g_selected_button;
+}
+
+uint8_t display_get_selected_note(void)
+{
+    return g_selected_note;
+}
+
+void display_copy_button_notes(uint8_t dest[DISPLAY_NUM_BUTTONS])
+{
+    for (uint8_t i = 0U; i < DISPLAY_NUM_BUTTONS; i++) {
+        dest[i] = g_button_notes[i];
+    }
 }
 
 void display_set_cursor(uint8_t col, uint8_t page)
@@ -607,9 +638,9 @@ void display_print_string(const char *s)
 
 void display_print_note(uint8_t note_index)
 {
-    char nm[4];
-    note_name_local(note_index, nm);
-    display_print_string(nm);
+    char name[4];
+    note_name_local(note_index, name);
+    display_print_string(name);
 }
 
 void display_show_whammy(uint8_t adc_val)
@@ -619,78 +650,19 @@ void display_show_whammy(uint8_t adc_val)
 
 void display_update(uint8_t note_idx, uint16_t whammy)
 {
+    (void)note_idx;
     (void)whammy;
-    g_preview_note = note_idx;
-    redraw_all(true, false);
+    display_force_redraw();
 }
 
 void display_update_ui(uint8_t note_index, uint8_t whammy, bool muted, bool strumming)
 {
+    (void)note_index;
     (void)whammy;
+    (void)muted;
+    (void)strumming;
 
-    if (note_index < NUM_GUITAR_NOTES) {
-        g_preview_note = note_index;
+    if (g_display_dirty) {
+        draw_ui_full();
     }
-
-    if (note_index != g_last_ui_note ||
-        whammy     != g_last_ui_whammy ||
-        (uint8_t)muted != g_last_ui_muted ||
-        (uint8_t)strumming != g_last_ui_strum ||
-        g_display_dirty) {
-
-        g_last_ui_note   = note_index;
-        g_last_ui_whammy = whammy;
-        g_last_ui_muted  = muted ? 1U : 0U;
-        g_last_ui_strum  = strumming ? 1U : 0U;
-
-        redraw_all(muted, strumming);
-        g_display_dirty = 0U;
-    }
-}
-
-void display_force_redraw(void)
-{
-    g_display_dirty = 1U;
-}
-
-void display_move_button_selection(int8_t delta)
-{
-    int8_t s = (int8_t)g_selected_button + delta;
-    if (s < 0) s = 0;
-    if (s > 4) s = 4;
-
-    g_selected_button = (uint8_t)s;
-    g_preview_note = g_button_notes[g_selected_button];
-    g_commit_pending = 0U;
-    g_display_dirty = 1U;
-}
-
-void display_move_note_selection(int8_t delta, uint32_t now_ms)
-{
-    int16_t n = (int16_t)g_preview_note + delta;
-
-    while (n < 0) n += NUM_GUITAR_NOTES;
-    while (n >= NUM_GUITAR_NOTES) n -= NUM_GUITAR_NOTES;
-
-    g_preview_note = (uint8_t)n;
-    g_preview_change_ms = now_ms;
-    g_commit_pending = 1U;
-    g_display_dirty = 1U;
-}
-
-void display_ui_tick(uint32_t now_ms)
-{
-    if (g_commit_pending) {
-        if ((uint32_t)(now_ms - g_preview_change_ms) >= 500U) {
-            g_button_notes[g_selected_button] = g_preview_note;
-            g_commit_pending = 0U;
-            g_display_dirty = 1U;
-        }
-    }
-}
-
-uint8_t display_get_button_note(uint8_t button_index)
-{
-    if (button_index < 5U) return g_button_notes[button_index];
-    return g_button_notes[0];
 }
