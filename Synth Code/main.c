@@ -1,3 +1,7 @@
+#ifndef F_CPU
+#define F_CPU 16000000UL
+#endif
+
 #include <avr/io.h>
 #include <avr/interrupt.h>
 #include <stdint.h>
@@ -8,10 +12,7 @@
 #include "synth.h"
 #include "inputs.h"
 #include "notes.h"
-
-#ifndef F_CPU
-#define F_CPU 16000000UL
-#endif
+#include "display.h"
 
 /*
  * Buzzer-debug note map chosen to be clearly different on a passive piezo.
@@ -25,14 +26,15 @@ static const uint8_t fret_note_map[5] = {
     GUITAR_NOTE_E4,   /* ORANGE */
 };
 
-static volatile uint8_t g_active_fret           = FRET_NONE;
-static volatile uint8_t g_fret_changed          = 0U;
-static volatile uint8_t g_strum_pressed         = 0U;
-static volatile uint8_t g_strum_released        = 0U;
-static volatile uint8_t g_button_press_flags    = 0U;
-static volatile uint8_t g_button_release_flags  = 0U;
+static volatile uint8_t g_active_fret          = FRET_NONE;
+static volatile uint8_t g_fret_changed         = 0U;
+static volatile uint8_t g_strum_pressed        = 0U;
+static volatile uint8_t g_strum_released       = 0U;
+static volatile uint8_t g_button_press_flags   = 0U;
+static volatile uint8_t g_button_release_flags = 0U;
 
-static uint8_t g_strum_down = 0U;
+static uint8_t g_strum_down       = 0U;
+static uint8_t g_display_note_idx = GUITAR_NOTE_C3;
 
 static const char *fret_name(uint8_t fret)
 {
@@ -46,16 +48,52 @@ static const char *fret_name(uint8_t fret)
     }
 }
 
+static void note_name_local(uint8_t idx, char out[4])
+{
+    static const char note_names[NUM_GUITAR_NOTES][4] = {
+        "E2",  "F2",  "F#2", "G2",  "G#2",
+        "A2",  "A#2", "B2",  "C3",  "C#3",
+        "D3",  "D#3", "E3",  "F3",  "F#3",
+        "G3",  "G#3", "A3",  "A#3", "B3",
+        "C4",  "C#4", "D4",  "D#4", "E4"
+    };
+
+    if (idx < NUM_GUITAR_NOTES) {
+        out[0] = note_names[idx][0];
+        out[1] = note_names[idx][1];
+        out[2] = note_names[idx][2];
+        out[3] = '\0';
+    } else {
+        out[0] = '?';
+        out[1] = '?';
+        out[2] = '?';
+        out[3] = '\0';
+    }
+}
+
 static const char *note_name_for_fret(uint8_t fret)
 {
-    switch (fret) {
-    case 0U: return "C3";
-    case 1U: return "E3";
-    case 2U: return "G3";
-    case 3U: return "B3";
-    case 4U: return "E4";
-    default: return "NONE";
+    static char buf[4];
+
+    if (fret < 5U) {
+        note_name_local(fret_note_map[fret], buf);
+        return buf;
     }
+
+    return "NONE";
+}
+
+static void display_refresh_now(void)
+{
+    uint8_t muted = 1U;
+    uint8_t strumming = 0U;
+
+    if ((g_active_fret < 5U) && g_strum_down) {
+        muted = 0U;
+        strumming = 1U;
+    }
+
+    display_update_ui(g_display_note_idx, 0U, muted, strumming);
 }
 
 /* 1 ms system tick for debounce. */
@@ -113,6 +151,10 @@ int main(void)
     inputs_init();
     timer0_init();
 
+    display_init();
+    g_display_note_idx = fret_note_map[0];
+    display_refresh_now();
+
     printf("System initialized\r\n");
     printf("PB2 buzzer mode: silent until strum, then play selected note\r\n");
 
@@ -140,6 +182,7 @@ int main(void)
 
         if (g_fret_changed) {
             uint8_t fret;
+
             cli();
             fret = g_active_fret;
             g_fret_changed = 0U;
@@ -147,7 +190,11 @@ int main(void)
 
             printf("Active fret: %s\r\n", fret_name(fret));
 
-            /* If the strum bar is being held, change the sounding note immediately. */
+            if (fret < 5U) {
+                g_display_note_idx = fret_note_map[fret];
+            }
+            display_refresh_now();
+
             if (g_strum_down) {
                 if (fret < 5U) {
                     synth_set_note(fret_note_map[fret]);
@@ -156,6 +203,7 @@ int main(void)
                     synth_mute();
                     printf("No fret held, output muted\r\n");
                 }
+                display_refresh_now();
             }
         }
 
@@ -168,12 +216,15 @@ int main(void)
             printf("STRUM pressed\r\n");
 
             if (g_active_fret < 5U) {
+                g_display_note_idx = fret_note_map[g_active_fret];
                 synth_set_note(fret_note_map[g_active_fret]);
                 printf("Playing %s\r\n", note_name_for_fret(g_active_fret));
             } else {
                 synth_mute();
                 printf("No fret held, output muted\r\n");
             }
+
+            display_refresh_now();
         }
 
         if (g_strum_released) {
@@ -184,6 +235,7 @@ int main(void)
             g_strum_down = 0U;
             printf("STRUM released\r\n");
             synth_mute();
+            display_refresh_now();
         }
     }
 }
