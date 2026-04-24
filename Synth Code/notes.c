@@ -1,6 +1,6 @@
 /*
- * notes.c — DDS phase-increment and note-name tables (PROGMEM)
- * ESE3500 Final Project — Guitar Synthesizer Controller
+ * notes.c ? DDS phase-increment and note-name tables (PROGMEM)
+ * ESE3500 Final Project ? Guitar Synthesizer Controller
  * Team 3: Synth Specialist (Guitar Hero Edition)
  * Authors: Adam Shalabi, Brandon Parkansky, Panos Dimtsoudis
  */

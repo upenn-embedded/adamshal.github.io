@@ -12,6 +12,7 @@ void on_button_press(uint8_t fret);
 void on_button_release(uint8_t fret);
 void on_strum_press(void);
 void on_strum_release(void);
+void on_mute_press(void);
 
 void inputs_init(void);
 void inputs_tick(void);

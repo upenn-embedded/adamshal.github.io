@@ -1,6 +1,6 @@
 /*
- * notes.h — Guitar note index macros and PROGMEM table declarations
- * ESE3500 Final Project — Guitar Synthesizer Controller
+ * notes.h ? Guitar note index macros and PROGMEM table declarations
+ * ESE3500 Final Project ? Guitar Synthesizer Controller
  * Team 3: Synth Specialist (Guitar Hero Edition)
  * Authors: Adam Shalabi, Brandon Parkansky, Panos Dimtsoudis
  */
@@ -78,7 +78,7 @@ extern const uint32_t note_phase_inc[NUM_GUITAR_NOTES] PROGMEM;
 extern const char note_names[NUM_GUITAR_NOTES][4] PROGMEM;
 
 /* Copies the note name at idx into buf (buf must be >= 4 bytes).
- * Use this instead of strcpy_P — XC8 does not provide strcpy_P. */
+ * Use this instead of strcpy_P ? XC8 does not provide strcpy_P. */
 void note_name_get(uint8_t idx, char buf[4]);
 
 #endif /* NOTES_H */

@@ -7,9 +7,19 @@
 #include "spi_dac.h"
 #include "notes.h"
 
-#define VIBRATO_MAX_STEP  8
+#ifndef CHORD_TONES
+#define CHORD_TONES 3U
+#endif
 
-/* 256-entry sine wavetable, unsigned 0..65535. */
+#ifndef NUM_CHORDS
+#define NUM_CHORDS 5U
+#endif
+
+#define VIBRATO_MAX_STEP     8
+#define ENV_MAX_Q16          (65535UL << 16)
+#define ENV_DECAY_STEP_Q16   858980UL   /* ~5.0 s fade at 1 ms updates */
+
+/* 256-entry sine wavetable, unsigned 16-bit, centered at 32768. */
 static const uint16_t sine_table[256] PROGMEM = {
     32768, 33572, 34375, 35179, 35981, 36779, 37576, 38370,
     39161, 39948, 40731, 41508, 42280, 43047, 43808, 44562,
@@ -46,61 +56,76 @@ static const uint16_t sine_table[256] PROGMEM = {
 };
 
 /*
- * Chord map:
- *   0 = D4 chord  = D4, F#4, A4
- *   1 = F4 chord  = F4, A4, C5
- *   2 = G4 chord  = G4, B4, D5
- *   3 = Ab4 chord = G#4, C5, D#5
- *   4 = D5 chord  = D5, F#5, A5
+ * Lighter 3-note guitar-style voicings to reduce ISR load.
+ *
+ * GREEN  -> D4   : D3 A3 G4   (Dsus4-ish flavor)
+ * RED    -> F4   : F2 C3 F4
+ * YELLOW -> G4   : G2 D3 C4   (Gsus4-ish flavor)
+ * BLUE   -> Ab4  : G#2 D#3 C#4
+ * ORANGE -> D5   : D3 A3 A4
  */
 static const uint8_t chord_notes[NUM_CHORDS][CHORD_TONES] PROGMEM = {
-    {GUITAR_NOTE_D4,  GUITAR_NOTE_A4,  GUITAR_NOTE_D5},
-    {GUITAR_NOTE_F4,  GUITAR_NOTE_C5,  GUITAR_NOTE_F5},
-    {GUITAR_NOTE_G4,  GUITAR_NOTE_D5,  GUITAR_NOTE_G5},
-    {GUITAR_NOTE_GS4, GUITAR_NOTE_DS5, GUITAR_NOTE_GS5},
-    {GUITAR_NOTE_D5,  GUITAR_NOTE_A5,  GUITAR_NOTE_D6}
+    /* GREEN  -> D power chord */
+    {GUITAR_NOTE_D3,  GUITAR_NOTE_A3,  GUITAR_NOTE_D4},
+
+    /* RED    -> F power chord */
+    {GUITAR_NOTE_F3,  GUITAR_NOTE_C4,  GUITAR_NOTE_F4},
+
+    /* YELLOW -> G power chord */
+    {GUITAR_NOTE_G3,  GUITAR_NOTE_D4,  GUITAR_NOTE_G4},
+
+    /* BLUE   -> Ab power chord */
+    {GUITAR_NOTE_GS3, GUITAR_NOTE_DS4, GUITAR_NOTE_GS4},
+
+    /* ORANGE -> D power chord high */
+    {GUITAR_NOTE_D4,  GUITAR_NOTE_A4,  GUITAR_NOTE_D5}
 };
 
 static volatile uint32_t g_phase_acc[CHORD_TONES];
 static volatile uint32_t g_base_phase_inc[CHORD_TONES];
 static volatile uint32_t g_cur_phase_inc[CHORD_TONES];
-static volatile uint8_t  g_muted = 1U;
+static volatile uint32_t g_env_gain_q16 = 0UL;
 
-/* Vibrato only. No whammy bend. */
-static volatile uint8_t  g_vibrato_depth_percent = 0U;
-static volatile int8_t   g_vibrato_pos = 0;
-static volatile int8_t   g_vibrato_dir = 1;
+static volatile uint8_t g_muted = 1U;
+static volatile uint8_t g_vibrato_depth_percent = 0U;
+static volatile int8_t  g_vibrato_pos = 0;
+static volatile int8_t  g_vibrato_dir = 1;
 
 static void synth_apply_pitch(void)
 {
-    int32_t delta_q16;
-    uint32_t scalar_q16;
-
-    delta_q16 = ((int32_t)65536L * (int32_t)g_vibrato_depth_percent * (int32_t)g_vibrato_pos)
-              / (100L * VIBRATO_MAX_STEP);
-    scalar_q16 = (uint32_t)((int32_t)65536L + delta_q16);
-
     for (uint8_t i = 0U; i < CHORD_TONES; i++) {
-        uint64_t prod = (uint64_t)g_base_phase_inc[i] * (uint64_t)scalar_q16;
-        g_cur_phase_inc[i] = (uint32_t)(prod >> 16);
+        int32_t delta = ((int32_t)g_base_phase_inc[i] *
+                         (int32_t)g_vibrato_depth_percent *
+                         (int32_t)g_vibrato_pos) /
+                        (100L * (int32_t)VIBRATO_MAX_STEP);
+
+        int32_t new_inc = (int32_t)g_base_phase_inc[i] + delta;
+
+        if (new_inc < 1L) {
+            new_inc = 1L;
+        }
+
+        g_cur_phase_inc[i] = (uint32_t)new_inc;
     }
 }
 
-/* Timer2 Compare A ISR at 31.25 kHz: mix 3 oscillators into one PWM stream. */
 ISR(TIMER2_COMPA_vect)
 {
-    int32_t mixed = 0;
-
     if (g_muted) {
         return;
     }
 
+    int32_t mixed = 0;
+    uint16_t gain = (uint16_t)(g_env_gain_q16 >> 16);
+
     for (uint8_t i = 0U; i < CHORD_TONES; i++) {
         g_phase_acc[i] += g_cur_phase_inc[i];
-        mixed += (int32_t)pgm_read_word(&sine_table[(uint8_t)(g_phase_acc[i] >> 24)]) - 32768L;
+        uint8_t idx = (uint8_t)(g_phase_acc[i] >> 24);
+        mixed += (int32_t)pgm_read_word(&sine_table[idx]) - 32768L;
     }
 
-    mixed /= 4;
+    mixed /= 4L;
+    mixed = (mixed * (int32_t)gain) >> 16;
     mixed += 32768L;
 
     if (mixed < 0L) {
@@ -123,6 +148,7 @@ void synth_init(void)
         g_cur_phase_inc[i] = 0UL;
     }
 
+    g_env_gain_q16 = 0UL;
     g_muted = 1U;
     g_vibrato_depth_percent = 0U;
     g_vibrato_pos = 0;
@@ -130,15 +156,14 @@ void synth_init(void)
 
     TCCR2A = (1 << WGM21);
     TCCR2B = 0x00;
-    OCR2A  = 127U;
+    OCR2A  = 127U;             /* 15.625 kHz sample rate */
     TCNT2  = 0U;
     TIFR2  = (1 << OCF2A);
     TIMSK2 = (1 << OCIE2A);
-    TCCR2B = (1 << CS21);   /* prescaler = 8 -> 31.25 kHz */
+    TCCR2B = (1 << CS21);      /* prescaler = 8 */
 
     pwm_audio_write(32768U);
     pwm_audio_disable();
-
     SREG = sreg;
 }
 
@@ -159,10 +184,11 @@ void synth_set_chord(uint8_t chord_idx)
 
     g_vibrato_pos = 0;
     g_vibrato_dir = 1;
+    g_env_gain_q16 = ENV_MAX_Q16;
     synth_apply_pitch();
+
     g_muted = 0U;
     pwm_audio_enable();
-
     SREG = sreg;
 }
 
@@ -171,9 +197,9 @@ void synth_mute(void)
     uint8_t sreg = SREG;
     cli();
 
+    g_env_gain_q16 = 0UL;
     g_muted = 1U;
     pwm_audio_disable();
-
     SREG = sreg;
 }
 
@@ -181,6 +207,7 @@ void synth_set_vibrato_depth(uint8_t depth_percent)
 {
     uint8_t sreg = SREG;
     cli();
+
     g_vibrato_depth_percent = depth_percent;
     synth_apply_pitch();
     SREG = sreg;
@@ -190,6 +217,7 @@ void synth_reset_vibrato(void)
 {
     uint8_t sreg = SREG;
     cli();
+
     g_vibrato_pos = 0;
     g_vibrato_dir = 1;
     synth_apply_pitch();
@@ -211,14 +239,34 @@ void synth_vibrato_tick(void)
 
     g_vibrato_pos += g_vibrato_dir;
 
-    if (g_vibrato_pos >= VIBRATO_MAX_STEP) {
-        g_vibrato_pos = VIBRATO_MAX_STEP;
+    if (g_vibrato_pos >= (int8_t)VIBRATO_MAX_STEP) {
+        g_vibrato_pos = (int8_t)VIBRATO_MAX_STEP;
         g_vibrato_dir = -1;
-    } else if (g_vibrato_pos <= -VIBRATO_MAX_STEP) {
-        g_vibrato_pos = -VIBRATO_MAX_STEP;
+    } else if (g_vibrato_pos <= -(int8_t)VIBRATO_MAX_STEP) {
+        g_vibrato_pos = -(int8_t)VIBRATO_MAX_STEP;
         g_vibrato_dir = 1;
     }
 
     synth_apply_pitch();
     SREG = sreg;
+}
+
+void synth_decay_tick_1ms(void)
+{
+    if (g_muted) {
+        return;
+    }
+
+    if (g_env_gain_q16 <= ENV_DECAY_STEP_Q16) {
+        g_env_gain_q16 = 0UL;
+        g_muted = 1U;
+        pwm_audio_disable();
+    } else {
+        g_env_gain_q16 -= ENV_DECAY_STEP_Q16;
+    }
+}
+
+uint8_t synth_is_active(void)
+{
+    return (uint8_t)(!g_muted);
 }
