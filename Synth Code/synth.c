@@ -19,7 +19,6 @@
 #define ENV_MAX_Q16          (65535UL << 16)
 #define ENV_DECAY_STEP_Q16   858980UL   /* ~5.0 s fade at 1 ms updates */
 
-/* 256-entry sine wavetable, unsigned 16-bit, centered at 32768. */
 static const uint16_t sine_table[256] PROGMEM = {
     32768, 33572, 34375, 35179, 35981, 36779, 37576, 38370,
     39161, 39948, 40731, 41508, 42280, 43047, 43808, 44562,
@@ -55,32 +54,6 @@ static const uint16_t sine_table[256] PROGMEM = {
     26374, 27165, 27959, 28756, 29554, 30356, 31160, 31963
 };
 
-/*
- * Lighter 3-note guitar-style voicings to reduce ISR load.
- *
- * GREEN  -> D4   : D3 A3 G4   (Dsus4-ish flavor)
- * RED    -> F4   : F2 C3 F4
- * YELLOW -> G4   : G2 D3 C4   (Gsus4-ish flavor)
- * BLUE   -> Ab4  : G#2 D#3 C#4
- * ORANGE -> D5   : D3 A3 A4
- */
-static const uint8_t chord_notes[NUM_CHORDS][CHORD_TONES] PROGMEM = {
-    /* GREEN  -> D power chord */
-    {GUITAR_NOTE_D3,  GUITAR_NOTE_A3,  GUITAR_NOTE_D4},
-
-    /* RED    -> F power chord */
-    {GUITAR_NOTE_F3,  GUITAR_NOTE_C4,  GUITAR_NOTE_F4},
-
-    /* YELLOW -> G power chord */
-    {GUITAR_NOTE_G3,  GUITAR_NOTE_D4,  GUITAR_NOTE_G4},
-
-    /* BLUE   -> Ab power chord */
-    {GUITAR_NOTE_GS3, GUITAR_NOTE_DS4, GUITAR_NOTE_GS4},
-
-    /* ORANGE -> D power chord high */
-    {GUITAR_NOTE_D4,  GUITAR_NOTE_A4,  GUITAR_NOTE_D5}
-};
-
 static volatile uint32_t g_phase_acc[CHORD_TONES];
 static volatile uint32_t g_base_phase_inc[CHORD_TONES];
 static volatile uint32_t g_cur_phase_inc[CHORD_TONES];
@@ -106,6 +79,31 @@ static void synth_apply_pitch(void)
         }
 
         g_cur_phase_inc[i] = (uint32_t)new_inc;
+    }
+}
+
+/* Build a true power chord: root + fifth + octave */
+static uint8_t power_fifth_note(uint8_t root)
+{
+    return (uint8_t)(root + 7U);   /* valid for C3..C5 roots */
+}
+
+static uint8_t power_octave_note(uint8_t root)
+{
+    return (uint8_t)(root + 12U);  /* valid for C3..C5 roots */
+}
+
+static void load_power_chord_root(uint8_t root_note)
+{
+    uint8_t notes[CHORD_TONES];
+
+    notes[0] = root_note;
+    notes[1] = power_fifth_note(root_note);
+    notes[2] = power_octave_note(root_note);
+
+    for (uint8_t i = 0U; i < CHORD_TONES; i++) {
+        g_phase_acc[i]      = 0UL;
+        g_base_phase_inc[i] = pgm_read_dword(&note_phase_inc[notes[i]]) << 1;
     }
 }
 
@@ -164,31 +162,46 @@ void synth_init(void)
 
     pwm_audio_write(32768U);
     pwm_audio_disable();
+
     SREG = sreg;
 }
 
 void synth_set_chord(uint8_t chord_idx)
 {
+    static const uint8_t roots[NUM_CHORDS] = {
+        GUITAR_NOTE_D3,
+        GUITAR_NOTE_F3,
+        GUITAR_NOTE_G3,
+        GUITAR_NOTE_GS3,
+        GUITAR_NOTE_D4
+    };
+
     if (chord_idx >= NUM_CHORDS) {
+        return;
+    }
+
+    synth_set_note(roots[chord_idx]);
+}
+
+void synth_set_note(uint8_t note_idx)
+{
+    if (note_idx < GUITAR_NOTE_C3 || note_idx > GUITAR_NOTE_C5) {
         return;
     }
 
     uint8_t sreg = SREG;
     cli();
 
-    for (uint8_t i = 0U; i < CHORD_TONES; i++) {
-        uint8_t note_idx = pgm_read_byte(&chord_notes[chord_idx][i]);
-        g_phase_acc[i] = 0UL;
-        g_base_phase_inc[i] = pgm_read_dword(&note_phase_inc[note_idx]) << 1;
-    }
+    load_power_chord_root(note_idx);
 
-    g_vibrato_pos = 0;
-    g_vibrato_dir = 1;
+    g_vibrato_pos  = 0;
+    g_vibrato_dir  = 1;
     g_env_gain_q16 = ENV_MAX_Q16;
     synth_apply_pitch();
 
     g_muted = 0U;
     pwm_audio_enable();
+
     SREG = sreg;
 }
 
@@ -200,6 +213,7 @@ void synth_mute(void)
     g_env_gain_q16 = 0UL;
     g_muted = 1U;
     pwm_audio_disable();
+
     SREG = sreg;
 }
 
@@ -210,6 +224,7 @@ void synth_set_vibrato_depth(uint8_t depth_percent)
 
     g_vibrato_depth_percent = depth_percent;
     synth_apply_pitch();
+
     SREG = sreg;
 }
 
@@ -221,6 +236,7 @@ void synth_reset_vibrato(void)
     g_vibrato_pos = 0;
     g_vibrato_dir = 1;
     synth_apply_pitch();
+
     SREG = sreg;
 }
 
@@ -248,6 +264,7 @@ void synth_vibrato_tick(void)
     }
 
     synth_apply_pitch();
+
     SREG = sreg;
 }
 
@@ -269,27 +286,4 @@ void synth_decay_tick_1ms(void)
 uint8_t synth_is_active(void)
 {
     return (uint8_t)(!g_muted);
-}
-
-void synth_set_note(uint8_t note_idx)
-{
-    if (note_idx >= NUM_GUITAR_NOTES) { return; }
-
-    uint8_t sreg = SREG;
-    cli();
-
-    for (uint8_t i = 0U; i < CHORD_TONES; i++) {
-        g_phase_acc[i]      = 0UL;
-        g_base_phase_inc[i] = pgm_read_dword(&note_phase_inc[note_idx]) << 1;
-    }
-
-    g_vibrato_pos    = 0;
-    g_vibrato_dir    = 1;
-    g_env_gain_q16   = ENV_MAX_Q16;
-    synth_apply_pitch();
-
-    g_muted = 0U;
-    pwm_audio_enable();
-
-    SREG = sreg;
 }
