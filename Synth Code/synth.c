@@ -270,3 +270,26 @@ uint8_t synth_is_active(void)
 {
     return (uint8_t)(!g_muted);
 }
+
+void synth_set_note(uint8_t note_idx)
+{
+    if (note_idx >= NUM_GUITAR_NOTES) { return; }
+
+    uint8_t sreg = SREG;
+    cli();
+
+    for (uint8_t i = 0U; i < CHORD_TONES; i++) {
+        g_phase_acc[i]      = 0UL;
+        g_base_phase_inc[i] = pgm_read_dword(&note_phase_inc[note_idx]) << 1;
+    }
+
+    g_vibrato_pos    = 0;
+    g_vibrato_dir    = 1;
+    g_env_gain_q16   = ENV_MAX_Q16;
+    synth_apply_pitch();
+
+    g_muted = 0U;
+    pwm_audio_enable();
+
+    SREG = sreg;
+}

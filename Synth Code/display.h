@@ -1,52 +1,104 @@
 /*
- * display.h ? ST7735 160x128 note-mapping UI for Guitar Synth project
+ * display.h ? ST7796S 480×320 LCD driver interface
+ * ESE3500 Final Project ? Guitar Synthesizer Controller
+ * Team 3: Synth Specialist (Guitar Hero Edition)
+ * University of Pennsylvania ? Spring 2026
  *
- * Updated pin wiring (ATmega328PB ? Adafruit ST7735 TFT):
+ * Authors: Adam Shalabi, Brandon Parkansky, Panos Dimtsoudis
+ *
+ * ?? Pin connections ???????????????????????????????????????????????
  *   PB4 ? TFT SDA / MOSI
  *   PB5 ? TFT SCK
- *   PB1 ? TFT CS      (moved off PB2 because PB2 is the audio output)
+ *   PB1 ? TFT CS
  *   PC3 ? TFT DC / A0
  *   PC4 ? TFT RST
  *
- * Recommended joystick pins with the current project pinout:
- *   PC1 / ADC1 ? joystick vertical axis  (up/down button selection)
- *   PC2 / ADC2 ? joystick horizontal axis (left/right note wheel)
- *   PC5 / ADC5 or any free GPIO ? optional joystick pushbutton
+ * ?? Screen layout ?????????????????????????????????????????????????
+ *
+ *   ??????????????????????????????????????????
+ *   ?  RED   | B3  ?                         ?
+ *   ?ORANGE  | A2  ?    NOTE SCROLL WHEEL    ?
+ *   ?YELLOW  | G3  ?   (5 visible notes,     ?
+ *   ? GREEN  | E4  ?  centre = pending pick) ?
+ *   ?  BLUE  | D3  ?                         ?
+ *   ??????????????????????????????????????????
+ *
+ *   Joystick Y ? moves button selection up/down (underlines label)
+ *   Joystick X ? scrolls note wheel up/down
+ *   Joystick click ? commits centre note to selected button
+ *
+ * ?? Partial-update strategy ???????????????????????????????????????
+ *   display_move_button_selection() redraws only the two changed boxes.
+ *   display_move_note_selection()   redraws only the text in each slot
+ *                                   (not the backgrounds), ? 15 ms.
+ *   display_commit_selected_note()  redraws only the affected box.
+ *   No full-screen refresh is ever needed after display_init().
+ *
+ * ?? Colour note ???????????????????????????????????????????????????
+ *   MADCTL is set to 0x60 (landscape, RGB colour order).
+ *   If colours look inverted change MADCTL_VAL in display.c to 0x68.
+ *   If the image is rotated/mirrored try 0x20, 0xA0, 0xC0, or 0xE0.
  */
 
 #ifndef DISPLAY_H
 #define DISPLAY_H
 
 #include <stdint.h>
-#include <stdbool.h>
 
-#define DISPLAY_NUM_BUTTONS  5U
-#define DISPLAY_COMMIT_MS    500UL
+/* ?? Public API ????????????????????????????????????????????????????? */
 
-extern volatile uint8_t g_display_dirty;
-
+/*
+ * display_init()
+ *   Configure SPI pins, reset and initialise the ST7796S, fill the
+ *   background, and draw the full UI.  Call before sei().
+ */
 void display_init(void);
-void display_clear(void);
 
-/* Legacy text helpers retained so older code still compiles. */
-void display_set_cursor(uint8_t col, uint8_t page);
-void display_print_char(char c);
-void display_print_string(const char *s);
-void display_print_note(uint8_t note_index);
-void display_show_whammy(uint8_t adc_val);
-void display_update(uint8_t note_idx, uint16_t whammy);
-void display_update_ui(uint8_t note_index, uint8_t whammy,
-                       bool muted, bool strumming);
-
-/* New note-mapper UI API. */
+/*
+ * display_force_redraw()
+ *   Repaint every element from scratch.  Useful after a reset or if
+ *   the display becomes corrupted.  ~600 ms with software SPI.
+ */
 void display_force_redraw(void);
-void display_ui_tick(uint32_t now_ms);
+
+/*
+ * display_move_button_selection(dir)
+ *   Move the highlighted button box up (dir < 0) or down (dir > 0).
+ *   Redraws only the old and new boxes (no full-screen update).
+ */
 void display_move_button_selection(int8_t dir);
+
+/*
+ * display_move_note_selection(dir, now_ms)
+ *   Scroll the note wheel up or down by one step.
+ *   now_ms is reserved for future smooth-scroll animation and may be 0.
+ *   Redraws only the text in each slot (~15 ms with software SPI).
+ */
 void display_move_note_selection(int8_t dir, uint32_t now_ms);
-void display_set_button_note(uint8_t button_idx, uint8_t note_idx);
-uint8_t display_get_button_note(uint8_t button_idx);
+
+/*
+ * display_commit_selected_note()
+ *   Assign the note currently at the centre of the scroll wheel to the
+ *   highlighted button.  Redraws only that button box.
+ */
+void display_commit_selected_note(void);
+
+/*
+ * display_get_button_note(btn)
+ *   Returns the note index (0?48) assigned to button btn (0?4).
+ */
+uint8_t display_get_button_note(uint8_t btn);
+
+/*
+ * display_get_selected_button()
+ *   Returns the index (0?4) of the currently highlighted button box.
+ */
 uint8_t display_get_selected_button(void);
+
+/*
+ * display_get_selected_note()
+ *   Returns the note index currently at the centre of the scroll wheel.
+ */
 uint8_t display_get_selected_note(void);
-void display_copy_button_notes(uint8_t dest[DISPLAY_NUM_BUTTONS]);
 
 #endif /* DISPLAY_H */

@@ -6,6 +6,8 @@
 #define FRET_NONE  0xFFU
 
 extern volatile uint16_t inputs_whammy;
+extern volatile uint16_t inputs_joy_y;
+extern volatile uint16_t inputs_joy_x;
 
 void on_fret_change(uint8_t fret);
 void on_button_press(uint8_t fret);
@@ -13,6 +15,7 @@ void on_button_release(uint8_t fret);
 void on_strum_press(void);
 void on_strum_release(void);
 void on_mute_press(void);
+void on_joy_click_press(void);
 
 void inputs_init(void);
 void inputs_tick(void);
