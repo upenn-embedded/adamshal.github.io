@@ -80,7 +80,7 @@ Our motivation for choosing this project is that it combines hardware reuse with
 | ID     | Description                                                                                                                                                                                                    |
 | ------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | HRS-01 | The system shall use an ATmega328PB-based control system to interface with all required user inputs, including the pitch buttons, strum input, mute button, joystick, and whammy control                      |
-| HRS-02 | The system shall include a DAC-based pitch CV generation stage capable of producing a stable control signal for the synthesizer voice                                                                           |
+| HRS-02 | The system shall include a ADC-based pitch CV generation stage capable of producing a stable control signal for the synthesizer voice                                                                           |
 | HRS-03 | The system shall include an audio output stage consisting of a buffer and power amplifier capable of driving a speaker or external audio output                                                               |
 | HRS-04 | The system shall include a display module for showing menu or mode information and shall communicate with the MCU using a supported serial protocol such as  I2C .                                             |
 
@@ -148,14 +148,21 @@ If you’ve never made a GitHub pages website before, you can follow this webpag
 
 | ID     | Description                                                                                               | Validation Outcome                                                                          |
 | ------ | --------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
-| SRS-01 | The IMU 3-axis acceleration will be measured with 16-bit depth every 100 milliseconds +/-10 milliseconds. | Confirmed, logged output from the MCU is saved to "validation" folder in GitHub repository. |
-
+| SRS-01 | The system shall read the guitar pitch buttons and determine the selected note or chord when a button is pressed. CONFIRMED: As buttons pressed, code attributes key (as tested in serial monitor shown in MVP demo, and heard in sound output).                                                                                                                           |
+| SRS-02 | When the user actuates the strum bar, the MCU shall generate and output the corresponding pitch control signal and gate signal. CONFIRMED: Note plays when strummed                                                                                                              |
+| SRS-03 | The system shall read the whammy input through the ADC and update pitch bend during active note playback. CONFIRMED: ADC detects whammy adjustments, vibrato added through code at threshold.                                                                                                                                   |
+| SRS-04 | The system shall support a mute function that disables note output when the mute button being pressed. CONFIRMED: Mute button pulls mute pin, PWM stops when pressed.                                                                                                                                    |
+| SRS-05 | The firmware shall continuously monitor all required inputs during operation, including pitch buttons, strum bar, mute button, joystick, and whammy control, without causing the system to miss valid note-trigger events during normal use. CONFIRMED: Essential inputs trigger interrupt, there is no latency or missed events when playing device. |
+| SRS-06 | The display and joystick-based UI shall allow the user to change at least one synth setting (such as waveform, octave, or mode), and the selected setting shall be updated on the display. CONFIRMED: Joystick controls screen, user can change configuration of notes, selection shows onscreen.                                                 |
+/
 #### 3.2 Hardware Requirements Specification (HRS) Results
 
 | ID     | Description                                                                                                                        | Validation Outcome                                                                                                      |
 | ------ | ---------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
-| HRS-01 | A distance sensor shall be used for obstacle detection. The sensor shall detect obstacles at a maximum distance of at least 10 cm. | Confirmed, sensed obstacles up to 15cm. Video in "validation" folder, shows tape measure and logged output to terminal. |
-|        |                                                                                                                                    |                                                                                                                         |
+| HRS-01 | The system shall use an ATmega328PB-based control system to interface with all required user inputs, including the pitch buttons, strum input, mute button, joystick, and whammy control CONFIRMED: ATMega has all input and output pins (pitch, strum, mute, joystick, whammy).                      |
+| HRS-02 | The system shall include a ADC-based pitch CV generation stage capable of producing a stable control signal for the synthesizer voice.                                                                            |
+| HRS-03 | The system shall include an audio output stage consisting of a buffer and power amplifier capable of driving a speaker or external audio output. CONFIRMED: buffer and amp circuit drives the speaker.                                                               |
+| HRS-04 | The system shall include a display module for showing menu or mode information and shall communicate with the MCU using a supported serial protocol such as  I2C . CONFIRMED: Screen working, communicates with ATMega through I2C                                            |
 
 ### 4. Conclusion
 
