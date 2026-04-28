@@ -1,3 +1,78 @@
+# Guitar Hero Guitar to Synthesizer Conversion
+
+## Demo Video
+Watch our final project demonstration below.
+
+(https://drive.google.com/drive/folders/1ST56ldJqHs8GEl2x1VyzHi_KoGJQNoxZ?dmr=1&ec=wgc-drive-%5Bmodule%5D-goto)
+
+---
+
+## Final Product Images
+
+### Exterior View
+<img width="637" height="846" alt="Screenshot 2026-04-28 at 6 22 09 PM" src="https://github.com/user-attachments/assets/d8293c24-e97c-4514-8308-dae707a1d341" />
+
+
+### Internal Electronics
+(https://drive.google.com/drive/folders/1iD0F-Pdt6Mc-L7aRFF9-XCKdbJgDcia5?dmr=1&ec=wgc-drive-%5Bmodule%5D-goto)
+
+
+### Showcase Thumbnail (400x400)
+[Need 400x400 Image]
+
+---
+
+## Project Overview
+
+Our project converts a Guitar Hero controller into a playable electronic synthesizer using an ATmega328PB microcontroller. Colored fret buttons select musical notes while the speaker outputs synthesized PWM audio signals. A potentiometer-based Whammy Stick adds vibrato to the output wave when twisted. The LCD screen allows the user to see thier selected pitch for each button and change the pitch using the joystick. The strum bar at the center of the guitar turns activates sound output, playing the note of the corresponding pressed button when the guitar is strummed and fret switch closes, with the note slowly decaying to emulate a real strum. The goal was to combine embedded systems, signal generation, hardware interfacing, and creative design into an interactive musical instrument.
+
+---
+
+## Software Requirements Specification (SRS) Results
+
+| ID     | Description                                                                                               | Validation Outcome                                                                          |
+| ------ | --------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| SRS-01 | The system shall read the guitar pitch buttons and determine the selected note or chord when a button is pressed. | CONFIRMED: As buttons pressed, code attributes key (as tested in serial monitor shown in MVP demo, and heard in sound output).                                                                                                                           
+| SRS-02 | When the user actuates the strum bar, the MCU shall generate and output the corresponding pitch control signal and gate signal. | CONFIRMED: Note plays when strummed                                                                                                              
+| SRS-03 | The system shall read the whammy input through the ADC and update pitch bend during active note playback. | CONFIRMED: ADC detects whammy adjustments, vibrato added through code at threshold.                                                                                                                                   
+| SRS-04 | The system shall support a mute function that disables note output when the mute button being pressed. | CONFIRMED: Mute button pulls mute pin, PWM stops when pressed.                                                                                                                                    
+| SRS-05 | The firmware shall continuously monitor all required inputs during operation, including pitch buttons, strum bar, mute button, joystick, and whammy control, without causing the system to miss valid note-trigger events during normal use. | CONFIRMED: Essential inputs trigger interrupt, there is no latency or missed events when playing device. 
+| SRS-06 | The display and joystick-based UI shall allow the user to change at least one synth setting (such as waveform, octave, or mode), and the selected setting shall be updated on the display. | CONFIRMED: Joystick controls screen, user can change configuration of notes, selection shows onscreen.                                                 
+/
+
+## Hardware Requirements Specification (HRS) Results
+
+| ID     | Description                                                                                                                        | Validation Outcome                                                                                                      |
+| ------ | ---------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| HRS-01 | The system shall use an ATmega328PB-based control system to interface with all required user inputs, including the pitch buttons, strum input, mute button, joystick, and whammy control | CONFIRMED: ATMega has all input and output pins (pitch, strum, mute, joystick, whammy).                      
+| HRS-02 | The system shall include a ADC-based pitch CV generation stage capable of producing a stable control signal for the synthesizer voice.                                                                            |
+| HRS-03 | The system shall include an audio output stage consisting of a buffer and power amplifier capable of driving a speaker or external audio output. | CONFIRMED: buffer and amp circuit drives the speaker.                                                               
+| HRS-04 | The system shall include a display module for showing menu or mode information and shall communicate with the MCU using a supported serial protocol such as  I2C .| CONFIRMED: Screen working, communicates with ATMega through I2C      
+
+---
+
+## Challenges / Obstacles
+
+The largest challenge was reverse engineering the Guitar Hero controller wiring. Because the hardware was not originally designed for custom embedded control, identifying signal pins, grounding, and button logic required extensive testing. We also encountered noise issues with PWM audio and several debugging setbacks involving hardware connections.
+
+---
+
+## Conclusion
+
+We learned how to integrate software and hardware into a complete embedded product. This included timers, interrupts, PWM audio generation, GPIO input handling, and debugging real circuits.
+
+Once wiring was understood, the fret button system and sound generation worked reliably.
+
+We are proud that we successfully transformed a gaming controller into a functioning musical instrument.
+
+Our original plan included many advanced features, but we narrowed scope to ensure a polished core system first.
+
+
+
+
+____________________________________________________________________________________________________________________
+Project ReadMe:
+
 [![Review Assignment Due Date](https://classroom.github.com/assets/deadline-readme-button-22041afd0340ce965d47ae6ef1cefeee28c7c493a6346c4f15d667ab976d596c.svg)](https://classroom.github.com/a/-Acvnhrq)
 
 # Final Project
