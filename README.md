@@ -3,7 +3,7 @@
 # Final Project
 
 **Team Number: 03**
-
+ 
 **Team Name: Synth Specialists**
 
 | Team Member Name  | Email Address           |
