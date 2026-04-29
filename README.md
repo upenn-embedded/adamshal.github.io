@@ -70,7 +70,6 @@ While we faced many obstacles building this guitar, both those that caused us to
 
 ---
 
-## Conclusion
 
 ## Conclusion
 
