@@ -66,18 +66,29 @@ We mostly stayed true to our hardware requirements, aside from the ADC based pit
 
 ## Challenges / Obstacles
 
+While we faced many obstacles building this guitar, both those that caused us to change direction adn those that aligned with the original vision which broke physically or were buggy during testing, the most concerning obstacle was power regulation. When testing our MVP demo, we drove a speaker without a dedicated amplifier and powered our entire system via the ATMega 5V port. As a result, the speaker drew far too much power upon playing the guitar, and only after overloading several ATMegas did we realize the root issue. To solve this, we used a 12V battery pack with a 5V LDO to power the speaker and microcontroller, which fixed the issue of the system shutting down entirely. However, we ran into a new issue: the LDO made the speaker signal extremely noisy, and only after adding another 5V LDO did our guitar work entirely as intended. 
+
 ---
 
 ## Conclusion
 
-We learned how to integrate software and hardware into a complete embedded product. This included timers, interrupts, PWM audio generation, GPIO input handling, and debugging real circuits.
+## Conclusion
 
-Once wiring was understood, the fret button system and sound generation worked reliably.
+Originally, we thought this project would be much easier than it actually was. During brainstorming, we planned advanced features such as filters, selectable waveform types (sine, square, sawtooth), and even modes that could imitate the sound of real guitars. In practice, we learned that embedded systems projects require strong prioritization. We had to reduce scope and focus on building a reliable product with the core features functioning well rather than attempting too many unstable additions.
 
-We are proud that we successfully transformed a gaming controller into a functioning musical instrument.
+One of the strongest outcomes was the final build quality. Earlier in development, we dealt with loose wiring, unreliable connections, inconsistent signals, and an overall messy prototype. By the end of the project, the final device was much cleaner, more organized, and significantly more robust.
 
-Our original plan included many advanced features, but we narrowed scope to ensure a polished core system first.
+We are especially proud that we transformed a Guitar Hero controller into a functional synthesizer that users can actually interact with. We are also proud that despite repeated setbacks, we continued iterating until we had a polished final product that looked presentable and operated consistently.
 
+We gained practical experience integrating hardware and software into a complete embedded product. This project reinforced the importance of debugging systematically, managing project scope, testing power systems carefully, and designing around real-world hardware constraints rather than ideal assumptions.
+
+We largely stayed true to our hardware requirements, aside from the original ADC-based pitch generation stage. As development progressed, we realized that a fully analog hardware synthesizer would add major complexity without significantly improving the user experience. Instead, we shifted toward software-driven sound synthesis using the microcontroller, simplifying the hardware while still achieving the intended functionality.
+
+Earlier power-system planning and staged subsystem testing would have saved significant time. We initially focused heavily on functionality without giving enough attention to current draw, signal quality, and voltage regulation.
+
+Power regulation became the largest unexpected obstacle. Initially, we assumed that supplying 5V everywhere would be sufficient. During early demos, we powered the system through the ATmega 5V rail while directly driving the speaker without a dedicated amplifier. This caused excessive current draw and repeatedly shut down or damaged components. We solved this by switching to a 12V battery pack with a 5V LDO regulator. However, this introduced severe speaker noise, which required adding an additional regulator stage before the system functioned reliably. This taught us that power design is just as important as logic design.
+
+If continued, future improvements would include waveform selection, filters, pitch effects, and song-learning mode functionality where a screen highlights notes in real time to teach users how to play songs.
 
 
 
