@@ -45,20 +45,26 @@ Our project converts a Guitar Hero controller into a playable electronic synthes
 | SRS-04 | The system shall support a mute function that disables note output when the mute button being pressed. | CONFIRMED: Mute button pulls mute pin, PWM stops when pressed.                                                                                                                                    
 | SRS-05 | The firmware shall continuously monitor all required inputs during operation, including pitch buttons, strum bar, mute button, joystick, and whammy control, without causing the system to miss valid note-trigger events during normal use. | CONFIRMED: Essential inputs trigger interrupt, there is no latency or missed events when playing device. 
 | SRS-06 | The display and joystick-based UI shall allow the user to change at least one synth setting (such as waveform, octave, or mode), and the selected setting shall be updated on the display. | CONFIRMED: Joystick controls screen, user can change configuration of notes, selection shows onscreen.                                            
+
+Overall, our software requirements were successfully fulfilled. The most difficult feature on the software side was the screen, as fitting elements to the right size and maintaining readable contrast between options proved harder than expected, along with overall miscommunications between the joystick and screen function. We almost scrapped the screen feature entirely. However, after hours debugging, we were able to get the screen to a satisfying working state. Proof of software functionality (screen, input reading & output, etc) can be seen in the comprehensive video demo (linked above).
+
 ## Hardware Requirements Specification (HRS) Results
 
 | ID     | Description                                                                                                                        | Validation Outcome                                                                                                      |
 | ------ | ---------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
 | HRS-01 | The system shall use an ATmega328PB-based control system to interface with all required user inputs, including the pitch buttons, strum input, mute button, joystick, and whammy control | CONFIRMED: ATMega has all input and output pins (pitch, strum, mute, joystick, whammy).                      
-| HRS-02 | The system shall include a ADC-based pitch CV generation stage capable of producing a stable control signal for the synthesizer voice.                                                                            |
+| HRS-02 | The system shall include a ADC-based pitch CV generation stage capable of producing a stable control signal for the synthesizer sound.                                                                            |
 | HRS-03 | The system shall include an audio output stage consisting of a buffer and power amplifier capable of driving a speaker or external audio output. | CONFIRMED: buffer and amp circuit drives the speaker.                                                               
 | HRS-04 | The system shall include a display module for showing menu or mode information and shall communicate with the MCU using a supported serial protocol such as  I2C .| CONFIRMED: Screen working, communicates with ATMega through I2C      
+
+We mostly stayed true to our hardware requirements, aside from the ADC based pitch generation stage. When building out the hardware, we realized that a physical analog-based synthesizer would not be feasible or provide much value to the project compared to handling sound output through software, and decided to instead reduce complexity in our sound output hardware (synth output prototype is pictured below). Hardware requirement proof can be seen in the internals tour, linked above. 
+
+<img width="615" height="809" alt="Screenshot 2026-04-28 at 11 27 30 PM" src="https://github.com/user-attachments/assets/7ac87ecb-3b15-485b-b0fe-0a9e8a7305dc" />
+
 
 ---
 
 ## Challenges / Obstacles
-
-The largest challenge was reverse engineering the Guitar Hero controller wiring. Because the hardware was not originally designed for custom embedded control, identifying signal pins, grounding, and button logic required extensive testing. We also encountered noise issues with PWM audio and several debugging setbacks involving hardware connections.
 
 ---
 
